@@ -1,5 +1,14 @@
 <template>
-  <h1 class="text-3xl font-bold underline">
-    Hello world!
-  </h1>
+  <Gallery />
 </template>
+
+<script>
+import Gallery from './components/Gallery.vue'
+
+export default {
+  name: 'App',
+  components: {
+    Gallery
+  }
+}
+</script>
