@@ -1,7 +1,22 @@
-# Vue 3 + Vite
+# WolfProductions | Photos
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+This application takes your photo gallery to the next level. I wanted a way to group albums together for different organisations or categories. So I wanted to group my personal albums together and seperate them from other albums. I also wanted to share a single album as a gallery where you can have the photos grouped into sections like pixieset can do, and I want to share a whole collection of albums from a category or organisation in a grid view. Overall I wanted to create a platform to share my photos and have lots of grouping I can do.
 
-## Recommended IDE Setup
+I run this app myself on [wolfproductions.photos](https://wolfproductions.photos), but it is also open source and free available for you to use and deploy yourself. Just follow the instructions below to get started.
 
-- [VS Code](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar)
+## Getting started
+
+The application uses the following technologies which we don't provide (I will however provide a basic setup guide for these technologies):
+
+- [AWS S3 storage](https://aws.amazon.com/s3/) for saving the photos
+- [MongoDB](https://mongodb.com/) for storing information about the albums and sections.
+
+The application itself runs on [Node.js](https://nodejs.org/) and [Express.js](https://expressjs.com/).
+
+## To-Do list
+
+- [x] Fancy up the gallery for different size images
+- [x] Create smaller images for the gallery
+- [x] Working show gallery button
+- [ ] Download images
+- [ ] Edit existing albums

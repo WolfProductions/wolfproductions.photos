@@ -3,12 +3,20 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.2.25"
+    "@aws-sdk/client-cognito-identity": "^3.118.0",
+    "@aws-sdk/client-s3": "^3.118.0",
+    "@aws-sdk/credential-providers": "^3.118.1",
+    "axios": "^0.27.2",
+    "buffer": "^6.0.3",
+    "moment": "^2.29.3",
+    "photoswipe": "^5.2.8",
+    "vue": "^3.2.25",
+    "vue-router": "^4.0.16"
   },
   "devDependencies": {
     "@headlessui/vue": "^1.6.5",

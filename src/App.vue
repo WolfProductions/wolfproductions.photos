@@ -1,14 +1,9 @@
 <template>
-  <Gallery />
+  <router-view />
 </template>
 
 <script>
-import Gallery from './components/Gallery.vue'
-
 export default {
-  name: 'App',
-  components: {
-    Gallery
-  }
+  name: 'App'
 }
 </script>
