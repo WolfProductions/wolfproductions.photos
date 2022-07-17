@@ -4,13 +4,21 @@
     class="sticky top-0 flex w-full flex-col space-y-2 bg-white py-3 px-3 md:flex-row md:space-y-0 md:px-7"
   >
     <!-- Title section -->
-    <div class="mr-12 flex flex-col justify-center">
-      <h1 class="min-w-max text-xl font-semibold leading-tight">
-        {{ album?.title }}
-      </h1>
-      <p class="text-base font-light">
-        {{album?.date }}
-      </p>
+    <div class="flex justify-between">
+      <div class="mr-12 flex flex-col justify-center">
+        <h1 class="min-w-max text-xl font-semibold leading-tight">
+          {{ album?.title }}
+        </h1>
+        <p class="text-base font-light">
+          {{album?.date }}
+        </p>
+      </div>
+
+      <div class="flex md:hidden items-center space-x-4 ml-auto">
+        <router-link :to="`/${$route.params.organisation_id}/${$route.params.album_id}/edit`">
+          <PencilIcon class="w-5 h-5 text-gray-700 m-2" />
+        </router-link>
+      </div>
     </div>
 
     <!-- Gallery section -->
@@ -30,7 +38,7 @@
     </div>
 
     <!-- Buttons -->
-    <div class="flex items-center space-x-4 ml-auto">
+    <div class="hidden md:flex items-center space-x-4 ml-auto">
       <router-link :to="`/${$route.params.organisation_id}/${$route.params.album_id}/edit`">
         <PencilIcon class="w-5 h-5 text-gray-700 m-2" />
       </router-link>

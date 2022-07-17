@@ -31,9 +31,11 @@ const app = express()
 const bodyParser = require('body-parser')
 
 /* Enable CORS. */
-app.use(cors({
-  origin: 'https://wolfproductions.photos'
-}))
+app.use(
+  cors({
+    origin: ['https://wolfproductions.photos', 'http://localhost:3000']
+  })
+)
 
 /* Enable body parsing. */
 app.use(bodyParser.json())

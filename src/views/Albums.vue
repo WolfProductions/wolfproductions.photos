@@ -19,7 +19,7 @@
         </div>
         <div class="flex flex-1 justify-between px-4">
           <div class="flex flex-1">
-            <form class="flex w-full lg:ml-0" action="#" method="GET">
+            <!-- <form class="flex w-full lg:ml-0" action="#" method="GET">
               <label for="search-field" class="sr-only">Search</label>
               <div
                 class="relative w-full text-gray-400 focus-within:text-gray-600"
@@ -37,7 +37,7 @@
                   name="search"
                 />
               </div>
-            </form>
+            </form> -->
           </div>
           <div class="ml-4 flex items-center lg:ml-6">
             <router-link

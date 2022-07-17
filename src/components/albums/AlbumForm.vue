@@ -491,11 +491,11 @@ export default {
     this.updateFiles()
 
     if (this.$route.params.album_id) {
-      const album = await axios.get(
+      const response = await axios.get(
         `https://wolfproductions.photos/api/album/${this.$route.params.album_id}`
       )
-      album.data.date = moment(album.data.date).format('YYYY-MM-DD')
-      this.album = album.data
+      response.data.date = moment(album.data.date).format('YYYY-MM-DD')
+      this.album = response.data
     }
   },
   methods: {

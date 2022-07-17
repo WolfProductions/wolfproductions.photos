@@ -22,7 +22,7 @@
         </router-link>
       </div>
       <div class="flex justify-between">
-        <div>
+        <div class="truncate">
           <p
             class="pointer-events-none mt-2 block truncate text-sm font-medium text-gray-900"
           >
@@ -38,7 +38,7 @@
           <router-link
             :to="`/${$route.params.organisation_id}/${album._id}/edit`"
           >
-            <PencilIcon class="m-2 h-5 w-5 text-gray-700" />
+            <PencilIcon class="m-2 h-4 lg:h-5 w-4 lg:w-5 text-gray-700" />
           </router-link>
         </div>
       </div>

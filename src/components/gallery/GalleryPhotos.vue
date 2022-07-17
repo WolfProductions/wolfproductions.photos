@@ -5,22 +5,37 @@
     id="gallery"
   >
     <!-- <div v-for="c in columns" :key="c" class="flex flex-col space-y-1.5"> -->
-    <a
-      v-for="photo of photos"
-      :key="photo.key"
-      :href="photo.src"
-      target="_blank"
-      rel="noopener noreferrer"
-      :data-pswp-width="1000"
-      :data-pswp-height="photo.height"
-    >
-      <img
-        class="aspect-[3/2] h-auto w-full cursor-pointer object-cover opacity-0 transition-opacity duration-200 ease-in-out"
-        @load="setDimensions"
-        :src="photo.thumbnail"
-        loading="lazy"
-      />
-    </a>
+    <div class="group relative" v-for="photo of photos" :key="photo.key">
+      <a
+        :key="photo.key"
+        :href="photo.src"
+        target="_blank"
+        rel="noopener noreferrer"
+        :data-pswp-width="1920"
+        :data-pswp-height="photo.height"
+      >
+        <img
+          class="aspect-[3/2] h-auto w-full cursor-pointer object-cover opacity-0 transition-opacity duration-200 ease-in-out"
+          @load="setDimensions"
+          :src="photo.thumbnail"
+          loading="lazy"
+        />
+      </a>
+      <div
+        class="absolute h-1/2 bottom-0 left-0 right-0 z-10 flex items-end justify-end from-transparent via-transparent to-black group-hover:bg-gradient-to-b"
+      >
+        <HeartSolidIcon
+          v-if="favorites.includes(photo.key)"
+          @click="switchFavorite(photo)"
+          class="m-2 hidden h-6 w-6 text-white group-hover:block cursor-pointer"
+        />
+        <HeartIcon
+          v-else
+          @click="switchFavorite(photo)"
+          class="m-2 hidden h-6 w-6 text-white group-hover:block cursor-pointer"
+        />
+      </div>
+    </div>
     <!-- </div> -->
   </div>
 </template>
@@ -29,8 +44,12 @@
 import PhotoSwipeLightbox from 'photoswipe/lightbox'
 import 'photoswipe/style.css'
 
+import { HeartIcon } from '@heroicons/vue/outline'
+import { HeartIcon as HeartSolidIcon } from '@heroicons/vue/solid'
+
 export default {
   name: 'GalleryPhotos',
+  components: { HeartIcon, HeartSolidIcon },
   props: {
     album: {
       type: Object,
@@ -46,7 +65,7 @@ export default {
 
     this.lightbox = new PhotoSwipeLightbox({
       gallery: '#gallery',
-      children: 'a',
+      children: 'div',
       showHideAnimationType: 'zoom',
       pswpModule: () => import('photoswipe')
     })
@@ -63,16 +82,21 @@ export default {
   computed: {
     photos() {
       const section = this.album?.sections?.find((section) => section.active)
-      // return this.transpose(this.createChunks(section?.photos, this.columns))
-      return section?.photos.map((photo) => {
+      const favorites = this.album?.sections?.find((section) => section.title == 'Highlights')
+
+      return section?.photos.sort((a, b) => b - a).map((photo) => {
         return {
           key: photo,
           src: this.getPhotoUrl(photo, 1920),
           thumbnail: this.getPhotoUrl(photo, 320),
           width: 1000,
-          height: 1000
+          height: 1000,
+          favorite: favorites?.photos.find((p) => p == photo.key) ? true : false
         }
       })
+    },
+    favorites() {
+      return this.album?.sections?.find((section) => section.title == 'Highlights')?.photos || []
     }
   },
   methods: {
@@ -133,6 +157,9 @@ export default {
 
       event.path[1].dataset.pswpWidth = newWidth
       event.path[1].dataset.pswpHeight = newHeight
+    },
+    switchFavorite(photo) {
+      this.$emit('switchFavorite', photo)
     }
   }
 }
