@@ -1,7 +1,7 @@
 <template>
   <div
     id="photos"
-    class="sticky top-0 flex w-full flex-col space-y-2 bg-white py-3 px-3 md:flex-row md:space-y-0 md:px-7"
+    class="sticky top-0 flex w-full flex-col space-y-2 bg-white py-3 px-3 md:flex-row md:space-y-0 md:px-7 z-10"
   >
     <!-- Title section -->
     <div class="flex justify-between">
