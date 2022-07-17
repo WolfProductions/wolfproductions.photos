@@ -21,7 +21,7 @@
           loading="lazy"
         />
       </a>
-      <div
+      <!-- <div
         class="absolute h-1/2 bottom-0 left-0 right-0 z-10 flex items-end justify-end from-transparent via-transparent to-black group-hover:bg-gradient-to-b"
       >
         <HeartSolidIcon
@@ -34,7 +34,7 @@
           @click="switchFavorite(photo)"
           class="m-2 hidden h-6 w-6 text-white group-hover:block cursor-pointer"
         />
-      </div>
+      </div> -->
     </div>
     <!-- </div> -->
   </div>
