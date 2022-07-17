@@ -494,7 +494,7 @@ export default {
       const response = await axios.get(
         `https://wolfproductions.photos/api/album/${this.$route.params.album_id}`
       )
-      response.data.date = moment(album.data.date).format('YYYY-MM-DD')
+      response.data.date = moment(response.data.date).format('YYYY-MM-DD')
       this.album = response.data
     }
   },
