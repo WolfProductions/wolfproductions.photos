@@ -34,13 +34,13 @@
             {{ moment(album.date).fromNow() }}
           </p>
         </div>
-        <div class="ml-auto flex items-center space-x-4">
+        <!-- <div class="ml-auto flex items-center space-x-4">
           <router-link
             :to="`/${$route.params.organisation_id}/${album._id}/edit`"
           >
             <PencilIcon class="m-2 h-4 lg:h-5 w-4 lg:w-5 text-gray-700" />
           </router-link>
-        </div>
+        </div> -->
       </div>
     </li>
   </ul>

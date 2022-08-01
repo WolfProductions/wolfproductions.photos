@@ -38,11 +38,11 @@
     </div>
 
     <!-- Buttons -->
-    <div class="hidden md:flex items-center space-x-4 ml-auto">
+    <!-- <div class="hidden md:flex items-center space-x-4 ml-auto">
       <router-link :to="`/${$route.params.organisation_id}/${$route.params.album_id}/edit`">
         <PencilIcon class="w-5 h-5 text-gray-700 m-2" />
       </router-link>
-    </div>
+    </div> -->
   </div>
 </template>
 
