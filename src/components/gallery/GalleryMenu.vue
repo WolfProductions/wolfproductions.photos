@@ -24,7 +24,7 @@
     <!-- Gallery section -->
     <div class="flex items-center overflow-x-auto pb-1.5 md:space-x-4 md:pb-0">
       <span
-        @click="album?.sections.forEach(s => s.active = false); section.active = true"
+        @click="album?.sections.forEach(s => s.active = false); section.active = true; resetScroll()"
         :class="[
           section.active
             ? 'border-b border-gray-800 font-normal text-gray-900 md:border-b-0'
@@ -56,6 +56,18 @@ export default {
     album: {
       type: Object,
       required: true
+    }
+  },
+  methods: {
+    resetScroll() {
+      const menu = document.getElementById('photos')
+      const photos = document.getElementById('gallery')
+      const top = photos.offsetTop
+
+      window.scrollTo({
+        top: top - menu.clientHeight,
+        behavior: 'smooth'
+      })
     }
   }
 }

@@ -38,7 +38,7 @@ app.use(
 )
 
 /* Enable body parsing. */
-app.use(bodyParser.json())
+app.use(bodyParser.json({ limit: '200kb' }))
 app.use(bodyParser.urlencoded({ extended: true }))
 
 /**

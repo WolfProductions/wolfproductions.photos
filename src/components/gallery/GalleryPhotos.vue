@@ -11,7 +11,7 @@
         :href="photo.src"
         target="_blank"
         rel="noopener noreferrer"
-        :data-pswp-width="1920"
+        :data-pswp-width="photo.width"
         :data-pswp-height="photo.height"
       >
         <img
@@ -44,6 +44,10 @@
 import PhotoSwipeLightbox from 'photoswipe/lightbox'
 import 'photoswipe/style.css'
 
+import axios from 'axios'
+
+import { create as exif } from 'exif-parser'
+
 import { HeartIcon } from '@heroicons/vue/outline'
 import { HeartIcon as HeartSolidIcon } from '@heroicons/vue/solid'
 
@@ -58,9 +62,10 @@ export default {
   },
   data: () => ({
     columns: 2,
-    lightbox: null
+    lightbox: null,
+    photos: []
   }),
-  mounted() {
+  async mounted() {
     this.setColumns()
 
     this.lightbox = new PhotoSwipeLightbox({
@@ -73,6 +78,8 @@ export default {
     this.lightbox.init()
 
     window.addEventListener('resize', this.setColumns)
+
+    this.getPhotos()
   },
   unmounted() {
     this.lightbox.destroy()
@@ -80,26 +87,33 @@ export default {
     window.removeEventListener('resize', this.setColumns)
   },
   computed: {
-    photos() {
-      const section = this.album?.sections?.find((section) => section.active)
-      const favorites = this.album?.sections?.find((section) => section.title == 'Highlights')
-
-      return section?.photos.sort((a, b) => b - a).map((photo) => {
-        return {
-          key: photo,
-          src: this.getPhotoUrl(photo, 1920),
-          thumbnail: this.getPhotoUrl(photo, 320),
-          width: 1000,
-          height: 1000,
-          favorite: favorites?.photos.find((p) => p == photo.key) ? true : false
-        }
-      })
-    },
     favorites() {
       return this.album?.sections?.find((section) => section.title == 'Highlights')?.photos || []
     }
   },
   methods: {
+    getPhotos() {
+      const section = this.album?.sections?.find((section) => section.active)
+      const favorites = this.album?.sections?.find((section) => section.title == 'Highlights')
+
+      if (section?.photos.length == 0) {
+        this.photos = []
+        return
+      }
+
+      let photos = section?.photos?.map((photo) => {
+        return {
+          key: photo,
+          src: this.getPhotoUrl(photo, 1920),
+          thumbnail: this.getPhotoUrl(photo, 320),
+          width: 1920,
+          height: 1000,
+          favorite: favorites?.photos.find((p) => p == photo.key) ? true : false
+        }
+      })
+
+      this.photos = photos?.sort((a, b) => a.created - b.created)
+    },
     getPhotoUrl(key, width) {
       if (!key) return ''
 
@@ -160,6 +174,14 @@ export default {
     },
     switchFavorite(photo) {
       this.$emit('switchFavorite', photo)
+    }
+  },
+  watch: {
+    album: {
+      handler() {
+        this.getPhotos()
+      },
+      deep: true
     }
   }
 }

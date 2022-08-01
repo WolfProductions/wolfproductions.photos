@@ -100,7 +100,7 @@ export default {
         key: key,
         edits: {
           resize: {
-            width: width || 64
+            width: width || 300
           }
         }
       })

@@ -296,12 +296,12 @@
                                     >
                                       {{ this.prefix || '/' }}
                                     </th>
-                                    <!-- <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Title</th>
-                                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Email</th>
-                                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Role</th> -->
-                                    <!-- <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                                      <span class="sr-only">Edit</span>
-                                    </th> -->
+                                    <th
+                                      scope="col"
+                                      class="min-w-[12rem] py-3.5 pr-3 text-left text-sm font-semibold text-gray-900"
+                                    >
+                                      Date Created
+                                    </th>
                                   </tr>
                                 </thead>
                                 <tbody
@@ -310,10 +310,6 @@
                                   <tr
                                     v-for="file in files"
                                     :key="file.name"
-                                    :class="[
-                                      section.photos.includes(file.key) &&
-                                        'bg-gray-50'
-                                    ]"
                                   >
                                     <td
                                       class="relative w-12 px-6 sm:w-16 sm:px-8"
@@ -356,28 +352,19 @@
                                         v-else
                                         class="flex items-center space-x-2"
                                       >
-                                        <img
+                                        <!-- <img
                                           :src="getPhotoUrl(file.key)"
                                           alt=""
                                           class="h-8 w-8 rounded object-cover"
-                                        />
+                                        /> -->
                                         <span>{{ file.name }}</span>
                                       </div>
                                     </td>
-                                    <!-- <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                      {{ file.title }}
+                                    <td>
+                                      <span class="text-sm font-medium">
+                                        {{ file.created != 1000 ? moment(file.created * 1000) : '-' }}
+                                      </span>
                                     </td>
-                                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                      {{ file.email }}
-                                    </td>
-                                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                      {{ file.role }}
-                                    </td>
-                                    <td class="whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                                      <a href="#" class="text-red-600 hover:text-red-900"
-                                        >Edit<span class="sr-only">, {{ file.name }}</span></a
-                                      >
-                                    </td> -->
                                   </tr>
                                 </tbody>
                               </table>
@@ -423,6 +410,8 @@
 <script>
 import axios from 'axios'
 import moment from 'moment'
+
+import { create as exif } from 'exif-parser'
 
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { CognitoIdentityClient } from '@aws-sdk/client-cognito-identity'
@@ -515,23 +504,41 @@ export default {
       })
 
       return `${CloudFrontUrl}/${btoa(imageRequest)}`
+
+      // return `https://s3.eu-west-1.amazonaws.com/wolfproductions.photos/${key}`
     },
     async removeSection(index) {
       this.album.sections.splice(index, 1)
     },
     async updateFiles() {
+      let folders = []
       let files = []
-      let results = await this.s3Client.send(
+      let currentResults = await this.s3Client.send(
         new ListObjectsV2Command({
           Bucket: 'wolfproductions.photos',
           Prefix: this.prefix,
           Delimiter: '/'
         })
       )
+      
+      let results = currentResults
+      
+      while (currentResults.NextContinuationToken) {
+        currentResults = await this.s3Client.send(
+          new ListObjectsV2Command({
+            Bucket: 'wolfproductions.photos',
+            Prefix: this.prefix,
+            Delimiter: '/',
+            ContinuationToken: currentResults.NextContinuationToken
+          })
+        )
+        results.Contents.push(...currentResults.Contents)
+      }
+
       this.result = results
 
       if (results.CommonPrefixes)
-        files.push(
+        folders.push(
           ...results.CommonPrefixes.map((prefix) => {
             return {
               key: prefix.Prefix,
@@ -541,7 +548,7 @@ export default {
           })
         )
 
-      if (results.Contents)
+      if (results.Contents) {
         files.push(
           ...results.Contents.map((file) => {
             const type =
@@ -559,11 +566,40 @@ export default {
           })
         )
 
-      this.files = files.sort((a, b) => {
-        if (a.type == 'folder' && b.type != 'folder') return -1
-        if (a.type != 'folder' && b.type == 'folder') return 1
-        return a.name.localeCompare(b.name)
-      })
+        files = await Promise.all(files.map(async (file) => {
+          if (file.type == 'folder') return {
+            key: file.key,
+            name: file.name,
+            type: file.type,
+            created: 1000
+          }
+
+          try {
+            const image = await axios.get(this.getPhotoUrl(file.key), { responseType: 'arraybuffer' })
+            const data = exif(image.data).parse()
+  
+            return {
+              key: file.key,
+              name: file.name,
+              type: file.type,
+              created: data.tags.CreateDate
+            }
+          } catch (e) {
+            return {
+              key: file.key,
+              name: file.name,
+              type: file.type,
+              created: 1000
+            }
+          }
+        }))
+      }
+
+
+      files = files.sort((a, b) => a.created - b.created)
+      folders = folders.sort((a, b) => a.name.localeCompare(b.name))
+
+      this.files = [...folders, ...files]
     },
     submit() {
       if (this.$route.params.album_id) {
