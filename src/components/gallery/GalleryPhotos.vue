@@ -159,18 +159,18 @@ export default {
       let [row] = matrix
       return row.map((value, column) => matrix.map((row) => row[column]))
     },
-    setDimensions() {
-      event.path[0].style.opacity = 1
+    setDimensions(event) {
+      event.target.style.opacity = 1
 
-      const width = event.path[0].naturalWidth
-      const height = event.path[0].naturalHeight
+      const width = event.target.naturalWidth
+      const height = event.target.naturalHeight
       const ratio = width / height
 
       const newWidth = 1920
       const newHeight = newWidth / ratio
 
-      event.path[1].dataset.pswpWidth = newWidth
-      event.path[1].dataset.pswpHeight = newHeight
+      event.target.parentElement.dataset.pswpWidth = newWidth
+      event.target.parentElement.dataset.pswpHeight = newHeight
     },
     switchFavorite(photo) {
       this.$emit('switchFavorite', photo)
