@@ -13,10 +13,12 @@
         rel="noopener noreferrer"
         :data-pswp-width="photo.width"
         :data-pswp-height="photo.height"
+        :data-original="photo.original"
+        data-cropped="true"
       >
         <img
           class="aspect-[3/2] h-auto w-full cursor-pointer object-cover opacity-0 transition-opacity duration-200 ease-in-out"
-          @load="setDimensions"
+          @load="fadeIn"
           :src="photo.thumbnail"
           loading="lazy"
         />
@@ -44,9 +46,7 @@
 import PhotoSwipeLightbox from 'photoswipe/lightbox'
 import 'photoswipe/style.css'
 
-import axios from 'axios'
-
-import { create as exif } from 'exif-parser'
+import { getPhotoUrl, getOriginalUrl } from '../../utils/photos'
 
 import { HeartIcon } from '@heroicons/vue/outline'
 import { HeartIcon as HeartSolidIcon } from '@heroicons/vue/solid'
@@ -70,9 +70,35 @@ export default {
 
     this.lightbox = new PhotoSwipeLightbox({
       gallery: '#gallery',
-      children: 'div',
+      children: 'a',
       showHideAnimationType: 'zoom',
       pswpModule: () => import('photoswipe')
+    })
+
+    // A button in the toolbar that downloads the original of the current photo
+    this.lightbox.on('uiRegister', () => {
+      this.lightbox.pswp.ui.registerElement({
+        name: 'download-button',
+        order: 8,
+        isButton: true,
+        tagName: 'a',
+        title: 'Download original',
+        html: {
+          isCustomSVG: true,
+          inner:
+            '<path d="M20.5 14.3 17.1 18V10h-2.2v7.9l-3.4-3.6L10 16l6 6.1 6-6.1ZM23 23H9v2h14Z" id="pswp__icn-download"/>',
+          outlineID: 'pswp__icn-download'
+        },
+        onInit: (el, pswp) => {
+          el.setAttribute('download', '')
+          el.setAttribute('target', '_blank')
+          el.setAttribute('rel', 'noopener')
+
+          pswp.on('change', () => {
+            el.href = pswp.currSlide.data.element.dataset.original
+          })
+        }
+      })
     })
 
     this.lightbox.init()
@@ -95,42 +121,22 @@ export default {
     getPhotos() {
       const section = this.album?.sections?.find((section) => section.active)
       const favorites = this.album?.sections?.find((section) => section.title == 'Highlights')
+      const meta = this.album?.photoMeta || {}
 
-      if (section?.photos.length == 0) {
-        this.photos = []
-        return
-      }
-
-      let photos = section?.photos?.map((photo) => {
-        return {
-          key: photo,
-          src: this.getPhotoUrl(photo, 1920),
-          thumbnail: this.getPhotoUrl(photo, 320),
-          width: 1920,
-          height: 1000,
-          favorite: favorites?.photos.find((p) => p == photo.key) ? true : false
-        }
-      })
-
-      this.photos = photos?.sort((a, b) => a.created - b.created)
-    },
-    getPhotoUrl(key, width) {
-      if (!key) return ''
-
-      const bucketName = 'wolfproductions.photos'
-      const CloudFrontUrl = 'https://d1b892w88fzt8v.cloudfront.net'
-
-      const imageRequest = JSON.stringify({
-        bucket: bucketName,
-        key: key,
-        edits: {
-          resize: {
-            width: width || 300
+      // A photo shows up once its variants have been made
+      this.photos = (section?.photos || [])
+        .filter((photo) => meta[photo]?.status == 'ready')
+        .map((photo) => {
+          return {
+            key: photo,
+            src: getPhotoUrl(photo, 'large'),
+            thumbnail: getPhotoUrl(photo, 'thumb'),
+            original: getOriginalUrl(photo),
+            width: meta[photo].width,
+            height: meta[photo].height,
+            favorite: favorites?.photos.find((p) => p == photo.key) ? true : false
           }
-        }
-      })
-
-      return `${CloudFrontUrl}/${btoa(imageRequest)}`
+        })
     },
     setColumns() {
       const width = document.documentElement.clientWidth
@@ -159,18 +165,8 @@ export default {
       let [row] = matrix
       return row.map((value, column) => matrix.map((row) => row[column]))
     },
-    setDimensions(event) {
+    fadeIn(event) {
       event.target.style.opacity = 1
-
-      const width = event.target.naturalWidth
-      const height = event.target.naturalHeight
-      const ratio = width / height
-
-      const newWidth = 1920
-      const newHeight = newWidth / ratio
-
-      event.target.parentElement.dataset.pswpWidth = newWidth
-      event.target.parentElement.dataset.pswpHeight = newHeight
     },
     switchFavorite(photo) {
       this.$emit('switchFavorite', photo)

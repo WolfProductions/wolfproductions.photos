@@ -9,7 +9,7 @@
       >
         <img
           v-if="album.cover"
-          :src="getPhotoUrl(album.cover)"
+          :src="getPhotoUrl(album.cover, 'medium')"
           alt=""
           class="pointer-events-none object-cover group-hover:opacity-75"
         />
@@ -47,7 +47,8 @@
 </template>
 
 <script>
-import axios from 'axios'
+import api from '../../api'
+import { getPhotoUrl } from '../../utils/photos'
 import moment from 'moment'
 
 import { PencilIcon } from '@heroicons/vue/outline'
@@ -57,17 +58,14 @@ export default {
   components: { PencilIcon },
   data() {
     return {
-      s3Client: null,
       albums: [],
       moment
     }
   },
   async mounted() {
     // Get the list of albums
-    axios
-      .get(
-        `https://wolfproductions.photos/api/organisations/${this.$route.params.organisation_id}/albums`
-      )
+    api
+      .get(`/organisations/${this.$route.params.organisation_id}/albums`)
       .then((response) => {
         if (!response.data || response.data.length == 0) return
 
@@ -77,22 +75,7 @@ export default {
       })
   },
   methods: {
-    getPhotoUrl(key, width) {
-      const bucketName = 'wolfproductions.photos'
-      const CloudFrontUrl = 'https://d1b892w88fzt8v.cloudfront.net'
-
-      const imageRequest = JSON.stringify({
-        bucket: bucketName,
-        key: key,
-        edits: {
-          resize: {
-            width: width || 800
-          }
-        }
-      })
-
-      return `${CloudFrontUrl}/${btoa(imageRequest)}`
-    }
+    getPhotoUrl
   }
 }
 </script>

@@ -1,0 +1,16 @@
+const mongoose = require('mongoose')
+
+/* One record per photo that an album or organisation refers to. */
+const photoSchema = new mongoose.Schema({
+  key: { type: String, unique: true },
+  status: { type: String, default: 'pending' },
+  /* The dimensions of the large variant. */
+  width: Number,
+  height: Number,
+  /* The original the variants were made from, to notice a replaced file. */
+  sourceMtimeMs: Number,
+  sourceSize: Number,
+  error: String
+})
+
+module.exports = photoSchema

@@ -2,7 +2,7 @@
   <div class="relative h-screen w-full overflow-hidden">
     <img
       class="h-full w-full object-cover"
-      :src="getPhotoUrl(album?.cover, 2000)"
+      :src="getPhotoUrl(album?.cover, 'large')"
       alt="Background image gallery cover"
     />
 
@@ -44,7 +44,8 @@
 </template>
 
 <script>
-import axios from 'axios'
+import api from '../../api'
+import { getPhotoUrl } from '../../utils/photos'
 import Logo from '../../assets/white_text_bg.svg'
 
 export default {
@@ -61,33 +62,14 @@ export default {
   }),
   mounted() {
     // Get the organisation
-    axios
-      .get(
-        `https://wolfproductions.photos/api/organisations/${this.$route.params.organisation_id}`
-      )
+    api
+      .get(`/organisations/${this.$route.params.organisation_id}`)
       .then((reponse) => {
         this.organisation = reponse.data
       })
   },
   methods: {
-    getPhotoUrl(key, width) {
-      if (!key) return ''
-
-      const bucketName = 'wolfproductions.photos'
-      const CloudFrontUrl = 'https://d1b892w88fzt8v.cloudfront.net'
-
-      const imageRequest = JSON.stringify({
-        bucket: bucketName,
-        key: key,
-        edits: {
-          resize: {
-            width: width || 300
-          }
-        }
-      })
-
-      return `${CloudFrontUrl}/${btoa(imageRequest)}`
-    }
+    getPhotoUrl
   }
 }
 </script>

@@ -4,64 +4,78 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A photo gallery (live at wolfproductions.photos) that groups albums under organisations; each album is split into titled sections of photos. The repo holds two independent npm packages: a Vue 3 SPA at the root and an Express/MongoDB API in `backend/`.
+A photo gallery (live at wolfproductions.photos) that groups albums under organisations; each album is split into titled sections of photos. The repo holds two independent npm packages: a Vue 3 SPA at the root and an Express/MongoDB API in `backend/`. The photos are self-hosted: the originals are read from a folder (a mounted NAS share) and resized variants are generated once and served from disk.
 
 ## Commands
 
 Frontend (repo root):
 
-- `npm run dev` — Vite dev server on port 3000, exposed on the LAN (`--host`)
+- `npm run dev` — Vite dev server on port 3000, exposed on the LAN (`--host`). It proxies `/api` and `/media` to the backend on `localhost:3002`, so start that too.
 - `npm run build` — production build to `dist/`
 - `npm run preview` — serve the built `dist/`
 - `npx prettier --write src` — format (there is no npm script for it)
 
-Backend (`backend/` has its own `package.json`, lockfile and `node_modules`):
+Backend (`backend/` has its own `package.json`, lockfile and `node_modules`; needs Node 20.9+ for `sharp`):
 
-- `cd backend && node index.js` — there is no start script; the port is hard-coded to 3002 (the port nginx proxies `/api/` to in production). Run it from `backend/` because dotenv reads `.env` from the cwd. `backend/.env` is gitignored and must provide `MONGODB_URI` (the existing one builds it from `MONGODB_USER` / `MONGODB_PASS` / `MONGODB_CLUSTER` / `MONGODB_DATABASE` via dotenv-expand).
+- `cd backend && npm start` — runs `node index.js` on `PORT` (default 3002). When a built `dist/` exists next to `backend/`, the same process also serves the frontend, so in production the whole site is this one process.
+- `npm run variants` — bring the variants on disk in line with the database, then exit. `npm run variants -- --prune` also removes variants of photos nothing refers to any more.
+- `node scripts/import-organisations.js <url of an /api/organisations endpoint>` — copy organisations (same ids) into the configured database.
+
+Configuration is `backend/.env` (gitignored; see `backend/.env.example`): the `MONGODB_*` variables, `PHOTOS_ROOT`, `VARIANTS_ROOT` and `ADMIN_TOKEN`. `backend/.env.local` (also gitignored) is loaded first and wins; use it on a development machine to point at a separate database (`MONGODB_DATABASE=..._dev`) and local folders. The backend prints the database name at startup and refuses to start without an `ADMIN_TOKEN` of 16+ characters or when the two roots overlap.
 
 There are no tests and no linter in either package.
 
 ## Things that will bite you
 
-- **The dev frontend talks to production.** Every axios call hard-codes `https://wolfproductions.photos/api/...`; there is no env var or Vite proxy. `npm run dev` reads and writes live data, and a locally running backend is not used unless you change those URLs. (The backend's CORS allowlist is the production origin plus `http://localhost:3000`.)
-- **There is no authentication.** The `/create` and `/edit` routes and the POST/PUT endpoints are open; the edit entry points are merely hidden in the UI (commented-out links, and a pencil icon in `GalleryMenu.vue` that is `md:hidden`).
-- **Dependencies are 2022-era majors** (Vite 2, Vue 3.2, Tailwind 3.1, Heroicons v1, Headless UI 1.6, Mongoose 6). Write against those APIs: Heroicons uses the v1 import paths and names (`@heroicons/vue/solid`, `MenuAlt2Icon`), and `backend/index.js` uses a Mongoose callback (`Album.findById(id, cb)`) that Mongoose 7+ removed.
-- `AlbumForm.vue` imports `@aws-sdk/credential-provider-cognito-identity`, which is not in the root `package.json` — it only resolves as a transitive dependency of `@aws-sdk/credential-providers`.
+- **`backend/.env` holds the production database credentials.** Without a `.env.local` that overrides `MONGODB_DATABASE`, a locally started backend reads and writes live data.
+- **Admin routes need the token.** `GET /api/library` and the album POST/PUT require `Authorization: Bearer <ADMIN_TOKEN>`. The frontend (`src/api.js`) asks for it with a `window.prompt` on the first 401 and keeps it in `localStorage` (`adminToken`). The `/create` and `/edit` pages themselves are still reachable by anyone; they just cannot browse or save. Everything else is public.
+- **Dependencies are 2022-era majors** (Vite 2, Vue 3.2, Tailwind 3.1, Heroicons v1, Headless UI 1.6, Mongoose 6). Write against those APIs: Heroicons uses the v1 import paths and names (`@heroicons/vue/solid`, `MenuAlt2Icon`). `sharp` is current and is the reason for the Node version.
+- **`sharp` needs a CPU with SSE4.2 (or ARM64).** It does not run on the NAS itself (Synology DS412+, Atom D2700); the NAS only stores the originals. `variants.js` requires `sharp` lazily, so the API and `/media` keep working on a machine without it.
+- **Stop `npm run dev` before `npm run build` on Windows.** The dev server watches `dist/`, and the build then fails with `EPERM ... mkdir dist\assets`.
+- **The variant definitions exist twice**: names, sizes and formats in `backend/variants.js` (`VARIANTS`), names and file extensions in `src/utils/photos.js`. Changing a size does not regenerate existing files; empty `VARIANTS_ROOT` and restart (or run `npm run variants`) to rebuild.
 
 ## Architecture
 
 ### Data model and API
 
-Mongoose schemas live in `backend/models/`, all routes in `backend/index.js`.
+Mongoose schemas live in `backend/models/` (registered in `models/index.js`), all routes in `backend/index.js`.
 
 - `Organisation { title, logo, cover }`
 - `Album { title, date, cover, sections: [{ title, photos: [key] }], organisation }`
+- `Photo { key, status: 'pending' | 'ready' | 'error', width, height, sourceMtimeMs, sourceSize, error }` — one record per key that an album or organisation refers to; `width`/`height` are those of the `large` variant.
 
-Every image field (`logo`, `cover`, `photos[]`) is an **S3 object key**, not a URL. The app never uploads photos; they are put in the bucket out of band and the album form only references existing keys.
+Every image field (`logo`, `cover`, `photos[]`) is a **key**: a path relative to `PHOTOS_ROOT` with forward slashes, e.g. `WolfProductions/2022-05-21 - Bandjes Oerknal/blue_king-044.jpg`. The app never uploads photos; they are copied onto the NAS out of band and the album form only references existing files. `library.parseKey()` is the single validator every key passes before it touches the disk (no `..`, no backslashes, no segments starting with `.`, `@` or `#`).
 
-API quirks: there is no endpoint to create organisations (they are inserted into MongoDB directly) and no delete endpoints. `PUT /api/album/:album_id` looks the album up by `req.body._id` and ignores the URL param. Deployment / reverse-proxy config is not in this repo.
+API quirks: there is no endpoint to create or edit organisations (insert them in MongoDB directly, or use the import script; the startup sync then makes their logo and cover variants) and there are no delete endpoints. `GET /api/album/:id` returns the album plus `photoMeta: { [key]: { status, width, height } }` and `photoStats: { total, ready, pending, error }`; `sections[].photos` stay plain key strings. Async handlers are wrapped (`wrap()`) and errors end in one handler that only exposes `HttpError` codes.
 
 ### Images
 
-- Photos live in the S3 bucket `wolfproductions.photos` (eu-west-1) and are displayed through a CloudFront image-resizing endpoint whose URL is the base64 of a JSON request: `${CloudFrontUrl}/${btoa(JSON.stringify({ bucket, key, edits: { resize: { width } } }))}`.
-- That logic is a `getPhotoUrl(key, width)` method **copy-pasted into every component that shows an image**, each with a different default width (32–800). There is no shared helper, so a bucket/CDN change must be made in every copy. `views/Albums.vue` is the odd one out: it builds a direct S3 URL for the logo.
-- `components/albums/AlbumForm.vue` browses the bucket straight from the browser: an `S3Client` with unauthenticated Cognito Identity Pool credentials (pool in eu-central-1, bucket in eu-west-1) runs `ListObjectsV2` with `Delimiter: '/'`, and a watcher on `prefix` reloads the listing for folder navigation. For every file it then downloads a 32px rendition and parses EXIF `CreateDate` so the picker sorts chronologically; `created: 1000` is the sentinel for folders and files without EXIF.
+- `backend/library.js` reads the originals: `listFolder()` backs the picker (`GET /api/library?path=`, image extensions only, sorted on EXIF date read with `exifr`), `statSource()` resolves a key and returns null for anything missing or resolving elsewhere (symlinks, wrong case).
+- `backend/variants.js` makes three variants per photo with `sharp`: `thumb` (covers 480×320, WebP), `medium` (covers 960×640, WebP) and `large` (fits in 2048×2048, JPEG). EXIF orientation is applied, nothing is enlarged, metadata is stripped. SVG files are copied unchanged. Files are written to `<VARIANTS_ROOT>/<variant>/<key>.<ext>` via a temporary dot name and served by `express.static` as `/media/<variant>/<key>.<ext>`.
+- Variants are only made for keys that are registered: saving an album registers its keys (`registerKeys`, cover first) and returns without waiting; `syncAll()` at startup registers everything the database refers to and queues what is new, changed (source mtime/size) or missing on disk. There is no on-demand generation and no route into `PHOTOS_ROOT` other than `GET /api/photos/original?key=`, which only serves keys with a `ready` record. Taking a photo out of an album prunes its variants unless something else still refers to it.
+- The queue is in-process and sequential. A photo that is online stays online when its original disappears, is replaced by something unreadable, or the library is unreachable; a file modified less than a minute ago is retried later (it may still be copying).
+- The frontend builds URLs with `getPhotoUrl(key, variant)` / `getOriginalUrl(key)` from `src/utils/photos.js`; components expose `getPhotoUrl` through `methods`.
 
 ### Frontend flow
 
-Routes (`src/router/index.js`) mirror the hierarchy, with Mongo ObjectIds as params: `/` organisations → `/:organisation_id` albums → `/:organisation_id/:album_id` gallery, plus `/:organisation_id/create` and `/:organisation_id/:album_id/edit`. Views are thin page shells; the logic is in `src/components/`. `AlbumForm` serves both create and edit, switching on `$route.params.album_id`.
+Routes (`src/router/index.js`) mirror the hierarchy, with Mongo ObjectIds as params: `/` organisations → `/:organisation_id` albums → `/:organisation_id/:album_id` gallery, plus `/:organisation_id/create` and `/:organisation_id/:album_id/edit`. Views are thin page shells; the logic is in `src/components/`. All API calls go through the axios instance in `src/api.js` (relative `/api`). `AlbumForm` serves both create and edit, switching on `$route.params.album_id`; its `prefix` is the library folder being browsed and is shared by the cover picker and every section picker.
 
 Gallery state (`src/components/gallery/`):
 
 - `Gallery.vue` fetches the album and hands the same object to `GalleryHeader`, `GalleryMenu` and `GalleryPhotos`. It adds a client-only `active` flag to each section (first one active). `GalleryMenu` switches sections by mutating that prop directly, and `GalleryPhotos` deep-watches `album` to rebuild its photo list.
+- While `photoStats.pending` is non-zero, `Gallery.vue` shows a progress line and polls the album every few seconds, replacing only `photoMeta` and `photoStats` so the active section is kept. `GalleryPhotos` only renders photos whose status is `ready`.
 - `Gallery.vue` overwrites `album.date` with a relative string (`fromNow()`) and keeps the real value in `album.originalDate`; anything that PUTs the album back must send `originalDate`.
 - The section title `'Highlights'` is a magic string: it is the default first section in `AlbumForm` and the section `switchFavorite` adds photos to / removes them from (the heart UI that triggers it is currently commented out in `GalleryPhotos.vue`).
-- Gallery photo order is the stored order of keys in `section.photos`. The `created` sort in `GalleryPhotos.getPhotos()` is a no-op because `created` is never set there.
-- PhotoSwipe needs image dimensions up front. Photos start with a 1920×1000 placeholder and `setDimensions` corrects `data-pswp-width/height` on the parent `<a>` from the thumbnail's aspect ratio when it loads.
+- Gallery photo order is the stored order of keys in `section.photos`.
+- PhotoSwipe reads `data-pswp-width/height` from each `<a>`; they come from `photoMeta`. `data-cropped` is set because the thumbnails are CSS-cropped to 3:2. A custom toolbar button downloads the original of the current slide.
+
+### Deployment
+
+Production on `main` still runs the old AWS-backed version on the droplet. This branch is meant to run at home: one Node process in a Proxmox LXC container with the NAS share mounted read-only as `PHOTOS_ROOT` and the variants on the container's own disk, so galleries keep working while the NAS is off (only browsing and downloading originals need it).
 
 ## Conventions
 
 - Vue SFCs use the Options API (`data` / `mounted` / `methods`), not `<script setup>`.
 - Styling is Tailwind utility classes only (plugins: typography, forms, line-clamp, aspect-ratio), with Headless UI for interactive primitives. The accent colour is red/rose.
 - Prettier: no semicolons, single quotes, no trailing commas; `prettier-plugin-tailwindcss` sorts class names.
-- The page shells in `src/views/` started as Tailwind UI templates. `Organisations.vue` still carries the template's placeholder sidebar data (`navigation`, `projects`, `activity`) and non-functional Search/Create controls, and `/home` is a leftover test page.
+- The page shells in `src/views/` started as Tailwind UI templates. `Organisations.vue` still carries the template's placeholder sidebar data (`navigation`, `projects`, `activity`) and non-functional Search/Create controls.

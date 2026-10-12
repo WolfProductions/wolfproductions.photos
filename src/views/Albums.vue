@@ -63,7 +63,8 @@
 </template>
 
 <script>
-import axios from 'axios'
+import api from '../api'
+import { getPhotoUrl } from '../utils/photos'
 
 import { MenuAlt2Icon, XIcon } from '@heroicons/vue/outline'
 import { SearchIcon } from '@heroicons/vue/solid'
@@ -89,23 +90,14 @@ export default {
   },
   mounted() {
     // Get the organisation
-    axios
-      .get(
-        `https://wolfproductions.photos/api/organisations/${this.$route.params.organisation_id}`
-      )
+    api
+      .get(`/organisations/${this.$route.params.organisation_id}`)
       .then((response) => {
         this.organisation = response.data
       })
   },
   methods: {
-    getPhotoUrl(key) {
-      if (!key) return ''
-
-      const bucketName = 'wolfproductions.photos'
-      const bucketUrl = 'https://s3.eu-west-1.amazonaws.com/' + bucketName + '/'
-
-      return bucketUrl + key
-    }
+    getPhotoUrl
   }
 }
 </script>

@@ -362,7 +362,7 @@
                                     </td>
                                     <td>
                                       <span class="text-sm font-medium">
-                                        {{ file.created != 1000 ? moment(file.created * 1000) : '-' }}
+                                        {{ file.created ? moment(file.created).format('D MMM YYYY HH:mm:ss') : '-' }}
                                       </span>
                                     </td>
                                   </tr>
@@ -390,6 +390,9 @@
 
     <div class="pt-5">
       <div class="flex justify-end">
+        <p v-if="error" class="mr-auto self-center text-sm text-red-600">
+          {{ error }}
+        </p>
         <router-link
           :to="`/${$route.params.organisation_id}`"
           type="button"
@@ -408,14 +411,8 @@
 </template>
 
 <script>
-import axios from 'axios'
+import api from '../../api'
 import moment from 'moment'
-
-import { create as exif } from 'exif-parser'
-
-import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3'
-import { CognitoIdentityClient } from '@aws-sdk/client-cognito-identity'
-import { fromCognitoIdentityPool } from '@aws-sdk/credential-provider-cognito-identity'
 
 import {
   Disclosure,
@@ -446,13 +443,12 @@ export default {
   },
   data() {
     return {
-      s3Client: null,
       moment,
       files: [],
-      result: null,
       prefix: '',
       checked: null,
       lastSelected: null,
+      error: '',
       album: {
         title: '',
         date: '',
@@ -467,155 +463,74 @@ export default {
     }
   },
   async mounted() {
-    const client = new CognitoIdentityClient({ region: 'eu-central-1' })
-
-    this.s3Client = await new S3Client({
-      region: 'eu-west-1',
-      credentials: fromCognitoIdentityPool({
-        client,
-        identityPoolId: 'eu-central-1:c2ef2934-6b93-49b5-8c3f-95510de1b38e'
-      })
-    })
-
     this.updateFiles()
 
     if (this.$route.params.album_id) {
-      const response = await axios.get(
-        `https://wolfproductions.photos/api/album/${this.$route.params.album_id}`
-      )
+      const response = await api.get(`/album/${this.$route.params.album_id}`)
       response.data.date = moment(response.data.date).format('YYYY-MM-DD')
       this.album = response.data
     }
   },
   methods: {
-    getPhotoUrl(key, width) {
-      if (!key) return ''
-      const bucketName = 'wolfproductions.photos'
-      const CloudFrontUrl = 'https://d1b892w88fzt8v.cloudfront.net'
-
-      const imageRequest = JSON.stringify({
-        bucket: bucketName,
-        key: key,
-        edits: {
-          resize: {
-            width: width || 32
-          }
-        }
-      })
-
-      return `${CloudFrontUrl}/${btoa(imageRequest)}`
-
-      // return `https://s3.eu-west-1.amazonaws.com/wolfproductions.photos/${key}`
-    },
     async removeSection(index) {
       this.album.sections.splice(index, 1)
     },
     async updateFiles() {
-      let folders = []
-      let files = []
-      let currentResults = await this.s3Client.send(
-        new ListObjectsV2Command({
-          Bucket: 'wolfproductions.photos',
-          Prefix: this.prefix,
-          Delimiter: '/'
-        })
-      )
-      
-      let results = currentResults
-      
-      while (currentResults.NextContinuationToken) {
-        currentResults = await this.s3Client.send(
-          new ListObjectsV2Command({
-            Bucket: 'wolfproductions.photos',
-            Prefix: this.prefix,
-            Delimiter: '/',
-            ContinuationToken: currentResults.NextContinuationToken
-          })
-        )
-        results.Contents.push(...currentResults.Contents)
+      // The prefix is the folder of the photo library that is being browsed
+      const prefix = this.prefix
+
+      let response
+      try {
+        response = await api.get('/library', { params: { path: prefix } })
+      } catch (e) {
+        this.error =
+          e.response?.status == 401
+            ? 'The admin token is needed to browse the photos.'
+            : 'The photo library is not available.'
+        return
       }
 
-      this.result = results
+      // Another folder was opened while this one was loading
+      if (prefix != this.prefix) return
 
-      if (results.CommonPrefixes)
-        folders.push(
-          ...results.CommonPrefixes.map((prefix) => {
-            return {
-              key: prefix.Prefix,
-              name: prefix.Prefix,
-              type: 'folder'
-            }
-          })
-        )
-
-      if (results.Contents) {
-        files.push(
-          ...results.Contents.map((file) => {
-            const type =
-              file.Key.replace(this.prefix, '') == '' ? 'folder' : 'file'
-            if (type == 'folder')
-              file.Key = file.Key.substring(0, file.Key.length - 2)
-            if (type == 'folder')
-              file.Key = file.Key.substring(0, file.Key.lastIndexOf('/')) + '/'
-            if (file.Key == '/') file.Key = ''
-            return {
-              key: file.Key,
-              name: type == 'folder' ? '..' : file.Key.replace(this.prefix, ''),
-              type: type
-            }
-          })
-        )
-
-        files = await Promise.all(files.map(async (file) => {
-          if (file.type == 'folder') return {
-            key: file.key,
-            name: file.name,
-            type: file.type,
-            created: 1000
-          }
-
-          try {
-            const image = await axios.get(this.getPhotoUrl(file.key), { responseType: 'arraybuffer' })
-            const data = exif(image.data).parse()
-  
-            return {
-              key: file.key,
-              name: file.name,
-              type: file.type,
-              created: data.tags.CreateDate
-            }
-          } catch (e) {
-            return {
-              key: file.key,
-              name: file.name,
-              type: file.type,
-              created: 1000
-            }
-          }
+      const { parent, folders, files } = response.data
+      this.error = ''
+      this.files = [
+        ...(parent === null ? [] : [{ key: parent, name: '..', type: 'folder' }]),
+        ...folders.map((folder) => ({
+          key: folder.path,
+          name: folder.name,
+          type: 'folder'
+        })),
+        // The files arrive sorted on the date they were taken
+        ...files.map((file) => ({
+          key: file.key,
+          name: file.name,
+          type: 'file',
+          created: file.takenAt
         }))
-      }
-
-
-      files = files.sort((a, b) => a.created - b.created)
-      folders = folders.sort((a, b) => a.name.localeCompare(b.name))
-
-      this.files = [...folders, ...files]
+      ]
     },
-    submit() {
-      if (this.$route.params.album_id) {
-        axios.put(
-          `https://wolfproductions.photos/api/album/${this.$route.params.album_id}`,
-          this.album
-        )
-        this.$router.push(
-          `/${this.$route.params.organisation_id}/${this.$route.params.album_id}`
-        )
-      } else {
-        axios.post(
-          `https://wolfproductions.photos/api/organisations/${this.$route.params.organisation_id}/albums`,
-          this.album
-        )
-        this.$router.push(`/${this.$route.params.organisation_id}`)
+    async submit() {
+      const { organisation_id, album_id } = this.$route.params
+      // Only the fields of the album itself, not what the API adds to it
+      const { _id, title, date, cover, sections, organisation } = this.album
+      const album = { _id, title, date, cover, sections, organisation }
+
+      this.error = ''
+      try {
+        if (album_id) {
+          await api.put(`/album/${album_id}`, album)
+          this.$router.push(`/${organisation_id}/${album_id}`)
+        } else {
+          await api.post(`/organisations/${organisation_id}/albums`, album)
+          this.$router.push(`/${organisation_id}`)
+        }
+      } catch (e) {
+        this.error =
+          e.response?.status == 401
+            ? 'The admin token is needed to save the album.'
+            : 'The album could not be saved.'
       }
     },
     multipleSelect(section, file) {

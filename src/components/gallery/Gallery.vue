@@ -2,6 +2,13 @@
   <div class="relative">
     <GalleryHeader :album="album" />
     <GalleryMenu :album="album" />
+    <p
+      v-if="album.photoStats?.pending"
+      class="mx-3 mb-3 text-sm font-light text-gray-500 md:mx-7"
+    >
+      Processing photos… {{ album.photoStats.ready }} /
+      {{ album.photoStats.total }}
+    </p>
     <GalleryPhotos :album="album" @switchFavorite="switchFavorite" />
   </div>
 </template>
@@ -11,7 +18,7 @@ import GalleryHeader from './GalleryHeader.vue'
 import GalleryMenu from './GalleryMenu.vue'
 import GalleryPhotos from './GalleryPhotos.vue'
 
-import axios from 'axios'
+import api from '../../api'
 import moment from 'moment'
 
 export default {
@@ -29,24 +36,45 @@ export default {
       sections: [],
       originalDate: ''
     },
-    moment
+    moment,
+    polls: 0,
+    pollTimer: null
   }),
   mounted() {
-    axios
-      .get(
-        `https://wolfproductions.photos/api/album/${this.$route.params.album_id}`
-      )
-      .then((reponse) => {
-        this.album = reponse.data
-        this.album.sections.forEach((section) => {
-          section.active = false
-        })
-        this.album.sections[0].active = true
-        this.album.originalDate = this.album.date
-        this.album.date = this.moment(this.album.date).fromNow()
+    api.get(`/album/${this.$route.params.album_id}`).then((reponse) => {
+      this.album = reponse.data
+      this.album.sections.forEach((section) => {
+        section.active = false
       })
+      this.album.sections[0].active = true
+      this.album.originalDate = this.album.date
+      this.album.date = this.moment(this.album.date).fromNow()
+      this.pollProgress()
+    })
+  },
+  unmounted() {
+    clearTimeout(this.pollTimer)
+    this.pollTimer = null
   },
   methods: {
+    // While photos are still being processed, refresh only their status, so
+    // the section the visitor picked stays as it is
+    pollProgress() {
+      if (!this.album.photoStats?.pending || this.polls++ > 600) return
+
+      this.pollTimer = setTimeout(async () => {
+        try {
+          const response = await api.get(
+            `/album/${this.$route.params.album_id}`
+          )
+          this.album.photoMeta = response.data.photoMeta
+          this.album.photoStats = response.data.photoStats
+        } catch (e) {
+          // Try again on the next round
+        }
+        if (this.pollTimer) this.pollProgress()
+      }, 3000)
+    },
     switchFavorite(photo) {
       const section = this.album?.sections?.find(
         (section) => section.title == 'Highlights'
@@ -75,17 +103,14 @@ export default {
         }
       }
 
-      axios.put(
-        `https://wolfproductions.photos/api/album/${this.$route.params.album_id}`,
-        {
-          _id: this.album._id,
-          title: this.album.title,
-          date: this.album.originalDate,
-          cover: this.album.cover,
-          sections: this.album.sections,
-          organisation: this.album.organisation
-        }
-      )
+      api.put(`/album/${this.$route.params.album_id}`, {
+        _id: this.album._id,
+        title: this.album.title,
+        date: this.album.originalDate,
+        cover: this.album.cover,
+        sections: this.album.sections,
+        organisation: this.album.organisation
+      })
     }
   }
 }

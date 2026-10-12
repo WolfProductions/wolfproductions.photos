@@ -54,7 +54,8 @@
 </template>
 
 <script>
-import axios from 'axios'
+import api from '../api'
+import { getPhotoUrl } from '../utils/photos'
 
 import { MenuAlt2Icon, XIcon } from '@heroicons/vue/outline'
 import { SearchIcon } from '@heroicons/vue/solid'
@@ -80,33 +81,14 @@ export default {
   },
   mounted() {
     // Get the organisation
-    axios
-      .get(
-        `https://wolfproductions.photos/api/organisations/${this.$route.params.organisation_id}`
-      )
+    api
+      .get(`/organisations/${this.$route.params.organisation_id}`)
       .then((response) => {
         this.organisation = response.data
       })
   },
   methods: {
-    getPhotoUrl(key, width) {
-      if (!key) return ''
-
-      const bucketName = 'wolfproductions.photos'
-      const CloudFrontUrl = 'https://d1b892w88fzt8v.cloudfront.net'
-
-      const imageRequest = JSON.stringify({
-        bucket: bucketName,
-        key: key,
-        edits: {
-          resize: {
-            width: width || 300
-          }
-        }
-      })
-
-      return `${CloudFrontUrl}/${btoa(imageRequest)}`
-    }
+    getPhotoUrl
   }
 }
 </script>
