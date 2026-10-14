@@ -17,11 +17,11 @@
           v-else
           class="pointer-events-none flex items-center justify-center text-gray-300"
         >
-          <FolderIcon v-if="type == 'folder'" class="h-12 w-12" />
+          <FolderIcon v-if="kindOf(item) == 'folder'" class="h-12 w-12" />
           <PhotographIcon v-else class="h-12 w-12" />
         </div>
         <router-link
-          :to="`/${type == 'folder' ? 'f' : 'a'}/${item._id}`"
+          :to="`/${kindOf(item) == 'folder' ? 'f' : 'a'}/${item._id}`"
           class="absolute inset-0 focus:outline-none"
         >
           <span class="sr-only">Open {{ item.title }}</span>
@@ -38,7 +38,7 @@
       </div>
       <div class="pointer-events-none mt-2 flex items-center space-x-1.5">
         <FolderIcon
-          v-if="type == 'folder'"
+          v-if="kindOf(item) == 'folder'"
           class="h-4 w-4 flex-shrink-0 text-gray-400"
         />
         <p class="truncate text-sm font-medium text-gray-900">
@@ -46,7 +46,7 @@
         </p>
       </div>
       <p
-        v-if="type == 'album' && item.date"
+        v-if="kindOf(item) == 'album' && item.date"
         class="pointer-events-none block text-sm font-medium text-gray-500"
       >
         {{ moment(item.date).fromNow() }}
@@ -71,6 +71,12 @@ export default {
     type: { type: String, default: 'folder' }
   },
   data: () => ({ moment }),
-  methods: { getPhotoUrl }
+  methods: {
+    getPhotoUrl,
+    /* A list can mix folders and albums when each item says its kind. */
+    kindOf(item) {
+      return item.kind || this.type
+    }
+  }
 }
 </script>

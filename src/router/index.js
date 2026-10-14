@@ -11,6 +11,14 @@ const router = createRouter({
       component: () => import('../views/Home.vue')
     },
     {
+      path: '/folders',
+      component: () => import('../views/Folders.vue')
+    },
+    {
+      path: '/portfolio/edit',
+      component: () => import('../views/PortfolioEdit.vue')
+    },
+    {
       path: '/f/new',
       component: () => import('../views/FolderEdit.vue')
     },

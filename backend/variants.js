@@ -9,7 +9,7 @@ const fs = require('fs')
 const path = require('path')
 const config = require('./config')
 const library = require('./library')
-const { Organisation, Folder, Album, Photo } = require('./models')
+const { Organisation, Folder, Album, Photo, Settings } = require('./models')
 
 /**
  * The frontend builds its URLs from the same names and extensions
@@ -369,7 +369,7 @@ async function registerKeys(keys, first) {
   enqueue(keys)
 }
 
-/* Every key a folder, album or organisation refers to. */
+/* Every key a folder, album, organisation or the portfolio refers to. */
 async function referencedKeys() {
   const keys = new Set()
   const add = (key) => {
@@ -390,6 +390,10 @@ async function referencedKeys() {
     add(folder.logo)
     add(folder.cover)
     ;(folder.photos || []).forEach(add)
+  }
+  for (const settings of await Settings.find().lean()) {
+    add(settings.portfolio?.hero)
+    ;(settings.portfolio?.photos || []).forEach(add)
   }
   for (const album of await Album.find().select('cover sections').lean()) {
     add(album.cover)
