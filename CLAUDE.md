@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A photo gallery (live at wolfproductions.photos) that groups albums under organisations; each album is split into titled sections of photos. The repo holds two independent npm packages: a Vue 3 SPA at the root and an Express/MongoDB API in `backend/`. The photos are self-hosted: the originals are read from a folder (a mounted NAS share) and resized variants are generated once and served from disk.
+A photo gallery (live at wolfproductions.photos) that groups albums in a tree of folders; each album is split into titled sections of photos. The backend has moved from organisations to folders; the frontend still uses the organisation routes, which the backend answers from the top-level folders. The repo holds two independent npm packages: a Vue 3 SPA at the root and an Express/MongoDB API in `backend/`. The photos are self-hosted: the originals are read from a folder (a mounted NAS share) and resized variants are generated once and served from disk.
 
 ## Commands
 
@@ -20,6 +20,7 @@ Backend (`backend/` has its own `package.json`, lockfile and `node_modules`; nee
 - `cd backend && npm start` — runs `node index.js` on `PORT` (default 3002). When a built `dist/` exists next to `backend/`, the same process also serves the frontend, so in production the whole site is this one process.
 - `npm run variants` — bring the variants on disk in line with the database, then exit. `npm run variants -- --prune` also removes variants of photos nothing refers to any more.
 - `node scripts/import-organisations.js <url of an /api/organisations endpoint>` — copy organisations (same ids) into the configured database.
+- `node scripts/migrate-folders.js [--apply]` — turn every organisation into a private top-level folder with the same id and put each album in it (albums without one go into a private `Ongesorteerd`). Without `--apply` it only prints the plan; running it again changes nothing. Try it on a copy of the database first.
 
 Configuration is `backend/.env` (gitignored; see `backend/.env.example`): the `MONGODB_*` variables, `PHOTOS_ROOT`, `VARIANTS_ROOT` and `ADMIN_TOKEN`. `backend/.env.local` (also gitignored) is loaded first and wins; use it on a development machine to point at a separate database (`MONGODB_DATABASE=..._dev`) and local folders. The backend prints the database name at startup and refuses to start without an `ADMIN_TOKEN` of 16+ characters or when the two roots overlap.
 
@@ -28,7 +29,8 @@ There are no tests and no linter in either package.
 ## Things that will bite you
 
 - **`backend/.env` holds the production database credentials.** Without a `.env.local` that overrides `MONGODB_DATABASE`, a locally started backend reads and writes live data.
-- **Admin routes need the token.** `GET /api/library` and the album POST/PUT require `Authorization: Bearer <ADMIN_TOKEN>`. The frontend (`src/api.js`) asks for it with a `window.prompt` on the first 401 and keeps it in `localStorage` (`adminToken`). The `/create` and `/edit` pages themselves are still reachable by anyone; they just cannot browse or save. Everything else is public.
+- **Admin routes need the token.** `GET /api/library` and every POST/PUT/DELETE require `Authorization: Bearer <ADMIN_TOKEN>`. The frontend (`src/api.js`) asks for it with a `window.prompt` on the first 401 and keeps it in `localStorage` (`adminToken`), and sends it on every request. The `/create` and `/edit` pages themselves are still reachable by anyone; they just cannot browse or save.
+- **Visitors only see what is public.** Read routes check `visibility` (`tree.canView`): without the token, a private folder or album answers 404 and is left out of lists. After `migrate-folders.js` everything is private, so the site looks empty to visitors until folders are made public. `/media` and `GET /api/photos/original` do not check this yet.
 - **Dependencies are 2022-era majors** (Vite 2, Vue 3.2, Tailwind 3.1, Heroicons v1, Headless UI 1.6, Mongoose 6). Write against those APIs: Heroicons uses the v1 import paths and names (`@heroicons/vue/solid`, `MenuAlt2Icon`). `sharp` is current and is the reason for the Node version.
 - **`sharp` needs a CPU with SSE4.2 (or ARM64).** It does not run on the NAS itself (Synology DS412+, Atom D2700); the NAS only stores the originals. `variants.js` requires `sharp` lazily, so the API and `/media` keep working on a machine without it.
 - **Stop `npm run dev` before `npm run build` on Windows.** The dev server watches `dist/`, and the build then fails with `EPERM ... mkdir dist\assets`.
@@ -40,13 +42,15 @@ There are no tests and no linter in either package.
 
 Mongoose schemas live in `backend/models/` (registered in `models/index.js`), all routes in `backend/index.js`.
 
-- `Organisation { title, logo, cover }`
-- `Album { title, date, cover, sections: [{ title, photos: [key] }], organisation }`
-- `Photo { key, status: 'pending' | 'ready' | 'error', width, height, sourceMtimeMs, sourceSize, error }` — one record per key that an album or organisation refers to; `width`/`height` are those of the `large` variant.
+- `Folder { title, description, parent, ancestors: [id], cover, logo, photos: [key], order, sort, visibility }` — `parent` is null at the top level; `ancestors` lists every folder above, top level first, so a subtree is one query (`{ ancestors: id }`). `photos` are loose photos next to the subfolders and albums.
+- `Album { title, date, cover, sections: [{ title, photos: [key] }], folder, ancestors, order, visibility, organisation }` — `ancestors` ends with `folder`; `organisation` is left over from before folders and only read by the old frontend.
+- `visibility` is `inherit` (default), `private` or `public`; `inherit` takes the nearest folder above that has a setting, and nothing set means private (`tree.visibilityOf`). A folder's logo is inherited the same way (`tree.logoOf`); a folder without a cover shows the newest album cover below it that the viewer may see (`tree.folderCard`).
+- `Organisation { title, logo, cover }` — kept until the migration is cleaned up; its keys still count as referenced.
+- `Photo { key, status: 'pending' | 'ready' | 'error', width, height, sourceMtimeMs, sourceSize, error }` — one record per key that a folder, album or organisation refers to; `width`/`height` are those of the `large` variant.
 
 Every image field (`logo`, `cover`, `photos[]`) is a **key**: a path relative to `PHOTOS_ROOT` with forward slashes, e.g. `WolfProductions/2022-05-21 - Bandjes Oerknal/blue_king-044.jpg`. The app never uploads photos; they are copied onto the NAS out of band and the album form only references existing files. `library.parseKey()` is the single validator every key passes before it touches the disk (no `..`, no backslashes, no segments starting with `.`, `@` or `#`).
 
-API quirks: there is no endpoint to create or edit organisations (insert them in MongoDB directly, or use the import script; the startup sync then makes their logo and cover variants) and there are no delete endpoints. `GET /api/album/:id` returns the album plus `photoMeta: { [key]: { status, width, height } }` and `photoStats: { total, ready, pending, error }`; `sections[].photos` stay plain key strings. Async handlers are wrapped (`wrap()`) and errors end in one handler that only exposes `HttpError` codes.
+Folder routes: `GET /api/folders/root`, `GET /api/folders/:id` (the folder with `breadcrumb`, `folders`, `albums`, `photos` + `photoMeta`), `POST /api/folders`, `PUT /api/folders/:id` (a changed `parent` moves the whole subtree, `tree.moveSubtree`; a parent below the folder is refused), `DELETE /api/folders/:id` (only when empty, else 409). Album routes: `GET/PUT/DELETE /api/albums/:id`, `POST /api/albums` with `folder`. The old routes (`/api/organisations…`, `/api/album/:id`) stay for the current frontend and answer from the top-level folders, with the same visibility check; the old PUT ignores `organisation`, so it never moves an album. Tree logic (visibility, breadcrumb, cards, moving) is in `backend/tree.js`, which loads all folders at once. `GET /api/album/:id` returns the album plus `photoMeta: { [key]: { status, width, height } }` and `photoStats: { total, ready, pending, error }`; `sections[].photos` stay plain key strings. Async handlers are wrapped (`wrap()`) and errors end in one handler that only exposes `HttpError` codes.
 
 ### Images
 
@@ -71,7 +75,7 @@ Gallery state (`src/components/gallery/`):
 
 ### Deployment
 
-Production on `main` still runs the old AWS-backed version on the droplet. This branch is meant to run at home: one Node process in a Proxmox LXC container with the NAS share mounted read-only as `PHOTOS_ROOT` and the variants on the container's own disk, so galleries keep working while the NAS is off (only browsing and downloading originals need it).
+Production runs this version at home: one Node process in a Proxmox LXC container with the NAS share mounted read-only as `PHOTOS_ROOT` and the variants on the container's own disk, so galleries keep working while the NAS is off (only browsing and downloading originals need it).
 
 ## Conventions
 
