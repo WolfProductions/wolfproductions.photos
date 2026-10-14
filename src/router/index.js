@@ -34,6 +34,10 @@ const router = createRouter({
       path: `/a/:album_id${ID}/edit`,
       component: () => import('../views/AlbumEdit.vue')
     },
+    {
+      path: '/s/:token',
+      component: () => import('../views/ShareLink.vue')
+    },
 
     /* The links from before folders: an organisation became a top-level folder with the same id. */
     {

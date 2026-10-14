@@ -4,6 +4,7 @@
  * not thousands.
  */
 const { Folder, Album } = require('./models')
+const { covers } = require('./shares')
 
 /* Every folder, by id. */
 async function loadFolders() {
@@ -30,9 +31,23 @@ function visibilityOf(node, folders) {
   return 'private'
 }
 
-/* Share links come in a later phase; until then a visitor sees what is public. */
+/* The admin sees everything; a visitor what is public, and what their share links point at. */
 function canView(node, folders, viewer) {
-  return viewer.admin || visibilityOf(node, folders) == 'public'
+  return (
+    viewer.admin ||
+    visibilityOf(node, folders) == 'public' ||
+    (viewer.shares || []).some((share) => covers(share, node))
+  )
+}
+
+/* Downloading needs the admin token or a share link that allows it. */
+function canDownload(node, viewer) {
+  return (
+    viewer.admin ||
+    (viewer.shares || []).some(
+      (share) => share.allowDownload && covers(share, node)
+    )
+  )
 }
 
 /**
@@ -207,6 +222,7 @@ module.exports = {
   ancestorsUnder,
   visibilityOf,
   canView,
+  canDownload,
   breadcrumb,
   logoOf,
   folderKeys,

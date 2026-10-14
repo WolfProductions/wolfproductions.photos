@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { shareHeader } from './shareLinks'
 
 const TOKEN_KEY = 'adminToken'
 
@@ -32,6 +33,9 @@ const api = axios.create({ baseURL: '/api' })
 api.interceptors.request.use((config) => {
   const token = getToken()
   if (token) config.headers.Authorization = `Bearer ${token}`
+  /* The share links this visitor opened give access to private folders and albums. */
+  const shares = shareHeader()
+  if (shares) config.headers['X-Share-Token'] = shares
   return config
 })
 

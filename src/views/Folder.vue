@@ -11,6 +11,13 @@
           :visibility="folder.effectiveVisibility"
           :inherited="folder.visibility == 'inherit'"
         />
+        <button
+          type="button"
+          class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2"
+          @click="sharing = true"
+        >
+          Share
+        </button>
         <AdminButton :to="`/f/${folder._id}/edit`">Edit</AdminButton>
         <AdminButton :to="{ path: '/f/new', query: { parent: folder._id } }"
           >New folder</AdminButton
@@ -77,6 +84,13 @@
         </p>
       </div>
     </main>
+
+    <ShareDialog
+      v-if="folder && session.admin"
+      :open="sharing"
+      :target="{ kind: 'folder', id: folder._id, title: folder.title }"
+      @close="sharing = false"
+    />
   </div>
 </template>
 
@@ -89,6 +103,7 @@ import AdminButton from '../components/layout/AdminButton.vue'
 import CardGrid from '../components/folders/CardGrid.vue'
 import GalleryPhotos from '../components/gallery/GalleryPhotos.vue'
 import NotFound from './NotFound.vue'
+import ShareDialog from '../components/shares/ShareDialog.vue'
 import TopBar from '../components/layout/TopBar.vue'
 import VisibilityBadge from '../components/folders/VisibilityBadge.vue'
 
@@ -100,10 +115,17 @@ export default {
     CardGrid,
     GalleryPhotos,
     NotFound,
+    ShareDialog,
     TopBar,
     VisibilityBadge
   },
-  data: () => ({ folder: null, missing: false, session, pollTimer: null }),
+  data: () => ({
+    folder: null,
+    missing: false,
+    session,
+    sharing: false,
+    pollTimer: null
+  }),
   computed: {
     empty() {
       const { folders, albums, photos } = this.folder
@@ -113,7 +135,8 @@ export default {
     looseAlbum() {
       return {
         sections: [{ title: '', photos: this.folder.photos, active: true }],
-        photoMeta: this.folder.photoMeta
+        photoMeta: this.folder.photoMeta,
+        canDownload: this.folder.canDownload
       }
     }
   },

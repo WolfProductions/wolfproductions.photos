@@ -264,7 +264,7 @@ export default {
 
     if (this.albumId) {
       const { _id, title, date, cover, folder, visibility, sections } = (
-        await api.get(`/albums/${this.albumId}`)
+        await api.get(`/albums/${this.albumId}/source`)
       ).data
       this.album = {
         _id,

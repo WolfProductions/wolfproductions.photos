@@ -4,16 +4,14 @@
     class="mx-2 mb-6 grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:mx-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
     id="gallery"
   >
-    <!-- <div v-for="c in columns" :key="c" class="flex flex-col space-y-1.5"> -->
-    <div class="group relative" v-for="photo of photos" :key="photo.key">
+    <div class="group relative" v-for="photo of photos" :key="photo.ref">
       <a
-        :key="photo.key"
         :href="photo.src"
         target="_blank"
         rel="noopener noreferrer"
         :data-pswp-width="photo.width"
         :data-pswp-height="photo.height"
-        :data-original="photo.original"
+        :data-ref="photo.ref"
         data-cropped="true"
       >
         <img
@@ -23,22 +21,7 @@
           loading="lazy"
         />
       </a>
-      <!-- <div
-        class="absolute h-1/2 bottom-0 left-0 right-0 z-10 flex items-end justify-end from-transparent via-transparent to-black group-hover:bg-gradient-to-b"
-      >
-        <HeartSolidIcon
-          v-if="favorites.includes(photo.key)"
-          @click="switchFavorite(photo)"
-          class="m-2 hidden h-6 w-6 text-white group-hover:block cursor-pointer"
-        />
-        <HeartIcon
-          v-else
-          @click="switchFavorite(photo)"
-          class="m-2 hidden h-6 w-6 text-white group-hover:block cursor-pointer"
-        />
-      </div> -->
     </div>
-    <!-- </div> -->
   </div>
 </template>
 
@@ -46,28 +29,22 @@
 import PhotoSwipeLightbox from 'photoswipe/lightbox'
 import 'photoswipe/style.css'
 
-import { getPhotoUrl, getOriginalUrl } from '../../utils/photos'
-
-import { HeartIcon } from '@heroicons/vue/outline'
-import { HeartIcon as HeartSolidIcon } from '@heroicons/vue/solid'
+import { DOWNLOAD_SIZES, downloadPhoto, getPhotoUrl } from '../../utils/photos'
 
 export default {
   name: 'GalleryPhotos',
-  components: { HeartIcon, HeartSolidIcon },
   props: {
+    /* The album, or a stand-in with one section; canDownload says whether the viewer may download. */
     album: {
       type: Object,
       required: true
     }
   },
   data: () => ({
-    columns: 2,
     lightbox: null,
     photos: []
   }),
   async mounted() {
-    this.setColumns()
-
     this.lightbox = new PhotoSwipeLightbox({
       gallery: '#gallery',
       children: 'a',
@@ -75,14 +52,14 @@ export default {
       pswpModule: () => import('photoswipe')
     })
 
-    // A button in the toolbar that downloads the original of the current photo
+    // A button in the toolbar with a menu of the sizes to download, when the viewer may
     this.lightbox.on('uiRegister', () => {
+      if (!this.album.canDownload) return
       this.lightbox.pswp.ui.registerElement({
         name: 'download-button',
         order: 8,
         isButton: true,
-        tagName: 'a',
-        title: 'Download original',
+        title: 'Download',
         html: {
           isCustomSVG: true,
           inner:
@@ -90,86 +67,70 @@ export default {
           outlineID: 'pswp__icn-download'
         },
         onInit: (el, pswp) => {
-          el.setAttribute('download', '')
-          el.setAttribute('target', '_blank')
-          el.setAttribute('rel', 'noopener')
-
-          pswp.on('change', () => {
-            el.href = pswp.currSlide.data.element.dataset.original
-          })
+          const menu = this.downloadMenu(pswp)
+          pswp.element.appendChild(menu)
+          el.addEventListener('click', () => menu.classList.toggle('hidden'))
+          pswp.on('change', () => menu.classList.add('hidden'))
         }
       })
     })
 
     this.lightbox.init()
-
-    window.addEventListener('resize', this.setColumns)
-
     this.getPhotos()
   },
   unmounted() {
     this.lightbox.destroy()
     this.lightbox = null
-    window.removeEventListener('resize', this.setColumns)
-  },
-  computed: {
-    favorites() {
-      return this.album?.sections?.find((section) => section.title == 'Highlights')?.photos || []
-    }
   },
   methods: {
     getPhotos() {
       const section = this.album?.sections?.find((section) => section.active)
-      const favorites = this.album?.sections?.find((section) => section.title == 'Highlights')
       const meta = this.album?.photoMeta || {}
 
       // A photo shows up once its variants have been made
       this.photos = (section?.photos || [])
-        .filter((photo) => meta[photo]?.status == 'ready')
-        .map((photo) => {
-          return {
-            key: photo,
-            src: getPhotoUrl(photo, 'large'),
-            thumbnail: getPhotoUrl(photo, 'thumb'),
-            original: getOriginalUrl(photo),
-            width: meta[photo].width,
-            height: meta[photo].height,
-            favorite: favorites?.photos.find((p) => p == photo.key) ? true : false
+        .filter((ref) => meta[ref]?.status == 'ready')
+        .map((ref) => ({
+          ref,
+          src: getPhotoUrl(ref, 'large'),
+          thumbnail: getPhotoUrl(ref, 'thumb'),
+          width: meta[ref].width,
+          height: meta[ref].height
+        }))
+    },
+    /* The menu under the download button: one entry per size, for the photo on screen. */
+    downloadMenu(pswp) {
+      const menu = document.createElement('div')
+      menu.className =
+        'hidden absolute right-4 top-14 z-[100000] flex flex-col overflow-hidden rounded-md bg-white text-sm text-gray-800 shadow-lg'
+
+      for (const { size, label } of DOWNLOAD_SIZES) {
+        const item = document.createElement('button')
+        item.type = 'button'
+        item.className = 'px-4 py-2 text-left hover:bg-gray-100'
+        item.textContent = label
+        item.addEventListener('click', async () => {
+          const ref = pswp.currSlide.data.element.dataset.ref
+          item.textContent = 'Downloading…'
+          try {
+            await downloadPhoto(ref, size)
+            menu.classList.add('hidden')
+          } catch (e) {
+            window.alert(
+              e.response?.status == 503
+                ? 'The original is not available right now.'
+                : 'The photo could not be downloaded.'
+            )
+          } finally {
+            item.textContent = label
           }
         })
-    },
-    setColumns() {
-      const width = document.documentElement.clientWidth
-      let columns = 6
-
-      if (width < 640) columns = 2
-      else if (width < 768) columns = 3
-      else if (width < 1024) columns = 4
-      else if (width < 1280) columns = 5
-      else columns = 6
-
-      this.columns = columns
-    },
-    createChunks(arr, chunkSize) {
-      if (!arr) return
-
-      const chunks = []
-      for (let i = 0; i < arr.length; i += chunkSize) {
-        chunks.push(arr.slice(i, i + chunkSize))
+        menu.appendChild(item)
       }
-      return chunks
-    },
-    transpose(matrix) {
-      if (!matrix) return []
-
-      let [row] = matrix
-      return row.map((value, column) => matrix.map((row) => row[column]))
+      return menu
     },
     fadeIn(event) {
       event.target.style.opacity = 1
-    },
-    switchFavorite(photo) {
-      this.$emit('switchFavorite', photo)
     }
   },
   watch: {

@@ -10,7 +10,7 @@
       Processing photos… {{ album.photoStats.ready }} /
       {{ album.photoStats.total }}
     </p>
-    <GalleryPhotos :album="album" @switchFavorite="switchFavorite" />
+    <GalleryPhotos :album="album" />
   </div>
 </template>
 
@@ -86,41 +86,6 @@ export default {
         }
         if (this.pollTimer) this.pollProgress()
       }, 3000)
-    },
-    switchFavorite(photo) {
-      const section = this.album?.sections?.find(
-        (section) => section.title == 'Highlights'
-      )
-      if (!section) {
-        this.album.sections = [
-          {
-            title: 'Highlights',
-            photos: [photo.key],
-            active: false
-          },
-          ...this.album?.sections
-        ]
-      } else {
-        const index = section.photos.indexOf(photo.key)
-        if (index > -1) {
-          section.photos.splice(index, 1)
-        } else {
-          section.photos.push(photo.key)
-        }
-
-        if (section.photos.length == 0) {
-          this.album.sections = this.album.sections.filter(
-            (section) => section.title != 'Highlights'
-          )
-        }
-      }
-
-      api.put(`/albums/${this.$route.params.album_id}`, {
-        title: this.album.title,
-        date: this.album.originalDate,
-        cover: this.album.cover,
-        sections: this.album.sections
-      })
     }
   }
 }
