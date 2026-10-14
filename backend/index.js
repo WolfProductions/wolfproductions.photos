@@ -17,11 +17,12 @@ try {
 
 /* Get the mongoose library and the models. */
 const mongoose = require('mongoose')
-const { Organisation, Album, Photo } = require('./models')
+const { Folder, Album, Photo } = require('./models')
 
 /* Get the photo library (the originals) and the variants made from it. */
 const library = require('./library')
 const variants = require('./variants')
+const tree = require('./tree')
 const { HttpError } = library
 
 const crypto = require('crypto')
@@ -49,15 +50,24 @@ app.use(bodyParser.urlencoded({ extended: true }))
 const wrap = (handler) => (req, res, next) =>
   Promise.resolve(handler(req, res, next)).catch(next)
 
-/* Only let requests through that carry the admin token. */
-function requireAdmin(req, res, next) {
+/* Whether a request carries the admin token. */
+function isAdmin(req) {
   const header = req.get('authorization') || ''
   const token = header.startsWith('Bearer ') ? header.slice(7) : ''
   const hash = (value) => crypto.createHash('sha256').update(value).digest()
 
-  if (!crypto.timingSafeEqual(hash(token), hash(config.ADMIN_TOKEN)))
-    return next(new HttpError(401, 'unauthorized'))
+  return crypto.timingSafeEqual(hash(token), hash(config.ADMIN_TOKEN))
+}
+
+/* Only let requests through that carry the admin token. */
+function requireAdmin(req, res, next) {
+  if (!isAdmin(req)) return next(new HttpError(401, 'unauthorized'))
   next()
+}
+
+/* Who is asking: the admin sees everything, a visitor what is public. */
+function viewerOf(req) {
+  return { admin: isAdmin(req) }
 }
 
 function objectId(id) {
@@ -65,16 +75,21 @@ function objectId(id) {
   return id
 }
 
+const VISIBILITIES = ['inherit', 'private', 'public']
+
+/* A key from a request, validated; collects the invalid ones in `invalid`. */
+function cleanKey(key, invalid) {
+  try {
+    return library.parseKey(key)
+  } catch (err) {
+    invalid.push(key)
+  }
+}
+
 /* The fields of an album from a request, with every key validated. */
 function albumFields(body) {
   const invalid = []
-  const clean = (key) => {
-    try {
-      return library.parseKey(key)
-    } catch (err) {
-      invalid.push(key)
-    }
-  }
+  const clean = (key) => cleanKey(key, invalid)
 
   const fields = {
     title: body.title,
@@ -92,6 +107,13 @@ function albumFields(body) {
       })
     )
   }
+  if (body.order !== undefined)
+    fields.order = body.order === null ? undefined : Number(body.order)
+  if (body.visibility !== undefined) {
+    if (!VISIBILITIES.includes(body.visibility))
+      throw new HttpError(400, 'invalid-visibility')
+    fields.visibility = body.visibility
+  }
 
   if (invalid.length) throw new HttpError(400, 'invalid-key', { keys: invalid })
   return fields
@@ -103,83 +125,246 @@ function albumKeys(album) {
   return [...new Set([album.cover, ...photos].filter(Boolean))]
 }
 
-/* An album as it is sent to the client: with the status and dimensions of its photos. */
-async function albumResponse(album) {
+/* The fields of a folder from a request, with every key validated. Only the fields that are sent. */
+function folderFields(body) {
+  const invalid = []
+  const fields = {}
+
+  if (body.title !== undefined) fields.title = String(body.title)
+  if (body.description !== undefined)
+    fields.description = String(body.description)
+  for (const field of ['cover', 'logo'])
+    if (body[field] !== undefined)
+      fields[field] = body[field] ? cleanKey(body[field], invalid) : ''
+  if (body.photos !== undefined)
+    fields.photos = [
+      ...new Set(
+        (Array.isArray(body.photos) ? body.photos : []).map((key) =>
+          cleanKey(key, invalid)
+        )
+      )
+    ]
+  if (body.order !== undefined)
+    fields.order = body.order === null ? undefined : Number(body.order)
+  if (body.sort !== undefined) {
+    if (!['manual', 'date-desc', 'title'].includes(body.sort))
+      throw new HttpError(400, 'invalid-sort')
+    fields.sort = body.sort
+  }
+  if (body.visibility !== undefined) {
+    if (!VISIBILITIES.includes(body.visibility))
+      throw new HttpError(400, 'invalid-visibility')
+    fields.visibility = body.visibility
+  }
+
+  if (invalid.length) throw new HttpError(400, 'invalid-key', { keys: invalid })
+  return fields
+}
+
+/* The parent folder id from a request: null for the top level. */
+function parentId(value) {
+  if (value === null || value === '' || value === undefined) return null
+  return objectId(value)
+}
+
+/* A folder as it is sent to the client: its own fields, the path to it, what is inside and the status of its loose photos. */
+async function folderResponse(folder, folders, viewer) {
+  const card = await tree.folderCard(folder, folders, viewer)
+  const photos = folder.photos || []
+  return {
+    ...card,
+    parent: folder.parent,
+    sort: folder.sort,
+    ...(viewer.admin && {
+      ownCover: folder.cover || '',
+      ownLogo: folder.logo || ''
+    }),
+    breadcrumb: tree.breadcrumb(folder, folders, viewer),
+    ...(await tree.children(folder._id, folders, viewer, folder.sort)),
+    photos,
+    ...(await variants.photoMeta(photos))
+  }
+}
+
+/* An album as it is sent to the client: with the status and dimensions of its photos and the path to it. */
+async function albumResponse(album, folders, viewer) {
+  folders = folders || (await tree.loadFolders())
   return {
     ...album.toObject(),
+    logo: tree.logoOf(album, folders),
+    breadcrumb: tree.breadcrumb(album, folders, viewer),
+    ...(viewer.admin && {
+      effectiveVisibility: tree.visibilityOf(album, folders)
+    }),
     ...(await variants.photoMeta(albumKeys(album)))
   }
+}
+
+/* The folder and its ancestors an album goes into; 400 when the folder does not exist. */
+function albumPlacement(folderId, folders) {
+  const folder = folders.get(String(folderId))
+  if (!folder) throw new HttpError(400, 'invalid-folder')
+  return { folder: folder._id, ancestors: tree.ancestorsUnder(folder) }
+}
+
+/* Load a folder or album the viewer may see, else 404 (a private one does not exist for a visitor). */
+async function viewable(Model, id, folders, viewer) {
+  const doc = await Model.findById(objectId(id))
+  if (!doc || !tree.canView(doc, folders, viewer))
+    throw new HttpError(404, 'not-found')
+  return doc
 }
 
 /**
  * The routes for the backend.
  */
+
+/* Folders. */
 app.get(
-  '/api/organisations',
+  '/api/folders/root',
   wrap(async (req, res) => {
-    const organisations = await Organisation.find()
-    res.send(organisations)
+    const viewer = viewerOf(req)
+    const folders = await tree.loadFolders()
+    res.send((await tree.children(null, folders, viewer, 'manual')).folders)
   })
 )
 
 app.get(
-  '/api/organisations/:organisation_id',
+  '/api/folders/:folder_id',
   wrap(async (req, res) => {
-    const organisation_id = objectId(req.params.organisation_id)
-    const organisation = await Organisation.findById(organisation_id)
-    if (!organisation) throw new HttpError(404, 'not-found')
-
-    res.send(organisation)
+    const viewer = viewerOf(req)
+    const folders = await tree.loadFolders()
+    const folder = await viewable(Folder, req.params.folder_id, folders, viewer)
+    res.send(await folderResponse(folder.toObject(), folders, viewer))
   })
 )
 
 app.post(
-  '/api/organisations/:organisation_id/albums',
+  '/api/folders',
   requireAdmin,
   wrap(async (req, res) => {
-    const organisation_id = objectId(req.params.organisation_id)
+    const folders = await tree.loadFolders()
+    const parent = parentId(req.body.parent)
+    if (!tree.isValidParent(null, parent, folders))
+      throw new HttpError(400, 'invalid-parent')
+
+    const folder = new Folder({
+      ...folderFields(req.body),
+      parent,
+      ancestors: tree.ancestorsUnder(parent && folders.get(String(parent)))
+    })
+    await folder.save()
+
+    await variants.registerKeys(tree.folderKeys(folder), folder.cover)
+    folders.set(String(folder._id), folder.toObject())
+    res.send(await folderResponse(folder.toObject(), folders, viewerOf(req)))
+  })
+)
+
+app.put(
+  '/api/folders/:folder_id',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const folders = await tree.loadFolders()
+    const folder = await Folder.findById(objectId(req.params.folder_id))
+    if (!folder) throw new HttpError(404, 'not-found')
+
+    const previousKeys = tree.folderKeys(folder)
+    Object.assign(folder, folderFields(req.body))
+
+    /* Moving a folder takes everything below it along. */
+    if (req.body.parent !== undefined) {
+      const parent = parentId(req.body.parent)
+      if (!tree.isValidParent(folder, parent, folders))
+        throw new HttpError(400, 'invalid-parent')
+      if (String(parent || '') != String(folder.parent || '')) {
+        folder.parent = parent
+        const ancestors = tree.ancestorsUnder(
+          parent && folders.get(String(parent))
+        )
+        await tree.moveSubtree(folder._id, ancestors)
+        folder.ancestors = ancestors
+      }
+    }
+    await folder.save()
+
+    const keys = tree.folderKeys(folder)
+    await variants.registerKeys(keys, folder.cover)
+    await variants.pruneUnreferenced(
+      previousKeys.filter((key) => !keys.includes(key))
+    )
+    res.send(
+      await folderResponse(
+        folder.toObject(),
+        await tree.loadFolders(),
+        viewerOf(req)
+      )
+    )
+  })
+)
+
+/* Only an empty folder can be deleted, so nothing disappears by accident. */
+app.delete(
+  '/api/folders/:folder_id',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const folder = await Folder.findById(objectId(req.params.folder_id))
+    if (!folder) throw new HttpError(404, 'not-found')
+
+    const [subfolders, albums] = await Promise.all([
+      Folder.countDocuments({ parent: folder._id }),
+      Album.countDocuments({ folder: folder._id })
+    ])
+    if (subfolders || albums)
+      throw new HttpError(409, 'folder-not-empty', { subfolders, albums })
+
+    await folder.deleteOne()
+    await variants.pruneUnreferenced(tree.folderKeys(folder))
+    res.send({ deleted: folder._id })
+  })
+)
+
+/* Albums. */
+app.get(
+  '/api/albums/:album_id',
+  wrap(async (req, res) => {
+    const viewer = viewerOf(req)
+    const folders = await tree.loadFolders()
+    const album = await viewable(Album, req.params.album_id, folders, viewer)
+    res.send(await albumResponse(album, folders, viewer))
+  })
+)
+
+app.post(
+  '/api/albums',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const folders = await tree.loadFolders()
     const album = new Album({
       ...albumFields(req.body),
-      organisation: organisation_id
+      ...albumPlacement(req.body.folder, folders)
     })
     await album.save()
 
     /* The variants are made in the background; the response does not wait for them. */
     await variants.registerKeys(albumKeys(album), album.cover)
-    res.send(await albumResponse(album))
-  })
-)
-
-app.get(
-  '/api/organisations/:organisation_id/albums',
-  wrap(async (req, res) => {
-    const organisation_id = objectId(req.params.organisation_id)
-    const albums = await Album.find({ organisation: organisation_id })
-    res.send(albums)
-  })
-)
-
-app.get(
-  '/api/album/:album_id',
-  wrap(async (req, res) => {
-    const album = await Album.findById(objectId(req.params.album_id))
-    if (!album) throw new HttpError(404, 'not-found')
-
-    res.send(await albumResponse(album))
+    res.send(await albumResponse(album, folders, viewerOf(req)))
   })
 )
 
 app.put(
-  '/api/album/:album_id',
+  '/api/albums/:album_id',
   requireAdmin,
   wrap(async (req, res) => {
+    const folders = await tree.loadFolders()
     const album = await Album.findById(objectId(req.params.album_id))
     if (!album) throw new HttpError(404, 'not-found')
 
     const previousKeys = albumKeys(album)
     Object.assign(album, albumFields(req.body))
-    if (mongoose.isValidObjectId(req.body.organisation))
-      album.organisation = req.body.organisation
+    /* Moving an album to another folder. */
+    if (req.body.folder !== undefined)
+      Object.assign(album, albumPlacement(req.body.folder, folders))
     await album.save()
 
     const keys = albumKeys(album)
@@ -188,7 +373,114 @@ app.put(
     await variants.pruneUnreferenced(
       previousKeys.filter((key) => !keys.includes(key))
     )
-    res.send(await albumResponse(album))
+    res.send(await albumResponse(album, folders, viewerOf(req)))
+  })
+)
+
+/* Deleting an album takes its variants offline; the originals on the NAS are never touched. */
+app.delete(
+  '/api/albums/:album_id',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const album = await Album.findById(objectId(req.params.album_id))
+    if (!album) throw new HttpError(404, 'not-found')
+
+    await album.deleteOne()
+    await variants.pruneUnreferenced(albumKeys(album))
+    res.send({ deleted: album._id })
+  })
+)
+
+/**
+ * The routes of the frontend from before folders. A top-level folder keeps
+ * the id of the organisation it was migrated from, so these answer from the
+ * folders. They go once the frontend uses the routes above.
+ */
+app.get(
+  '/api/organisations',
+  wrap(async (req, res) => {
+    const viewer = viewerOf(req)
+    const folders = await tree.loadFolders()
+    res.send((await tree.children(null, folders, viewer, 'manual')).folders)
+  })
+)
+
+app.get(
+  '/api/organisations/:organisation_id',
+  wrap(async (req, res) => {
+    const viewer = viewerOf(req)
+    const folders = await tree.loadFolders()
+    const folder = await viewable(
+      Folder,
+      req.params.organisation_id,
+      folders,
+      viewer
+    )
+    res.send(await tree.folderCard(folder.toObject(), folders, viewer))
+  })
+)
+
+app.get(
+  '/api/organisations/:organisation_id/albums',
+  wrap(async (req, res) => {
+    const viewer = viewerOf(req)
+    const folders = await tree.loadFolders()
+    const folder = await viewable(
+      Folder,
+      req.params.organisation_id,
+      folders,
+      viewer
+    )
+    const albums = await Album.find({ folder: folder._id })
+    res.send(albums.filter((album) => tree.canView(album, folders, viewer)))
+  })
+)
+
+app.post(
+  '/api/organisations/:organisation_id/albums',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const folders = await tree.loadFolders()
+    const album = new Album({
+      ...albumFields(req.body),
+      ...albumPlacement(objectId(req.params.organisation_id), folders)
+    })
+    await album.save()
+
+    await variants.registerKeys(albumKeys(album), album.cover)
+    res.send(await albumResponse(album, folders, viewerOf(req)))
+  })
+)
+
+app.get(
+  '/api/album/:album_id',
+  wrap(async (req, res) => {
+    const viewer = viewerOf(req)
+    const folders = await tree.loadFolders()
+    const album = await viewable(Album, req.params.album_id, folders, viewer)
+    res.send(await albumResponse(album, folders, viewer))
+  })
+)
+
+/* The old edit form sends the album's organisation; that is ignored, so saving never moves an album. */
+app.put(
+  '/api/album/:album_id',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const folders = await tree.loadFolders()
+    const album = await Album.findById(objectId(req.params.album_id))
+    if (!album) throw new HttpError(404, 'not-found')
+
+    const previousKeys = albumKeys(album)
+    Object.assign(album, albumFields(req.body))
+    await album.save()
+
+    const keys = albumKeys(album)
+    await variants.registerKeys(keys, album.cover)
+    await variants.pruneUnreferenced(
+      previousKeys.filter((key) => !keys.includes(key))
+    )
+    res.send(await albumResponse(album, folders, viewerOf(req)))
   })
 )
 

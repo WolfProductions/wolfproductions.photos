@@ -1,13 +1,13 @@
 /**
- * The variants: resized copies of the photos that albums and organisations
- * refer to. They are made once, stored under VARIANTS_ROOT as
+ * The variants: resized copies of the photos that albums, folders and
+ * organisations refer to. They are made once, stored under VARIANTS_ROOT as
  * <variant>/<key>.<extension> and served from there as /media.
  */
 const fs = require('fs')
 const path = require('path')
 const config = require('./config')
 const library = require('./library')
-const { Organisation, Album, Photo } = require('./models')
+const { Organisation, Folder, Album, Photo } = require('./models')
 
 /**
  * The frontend builds its URLs from the same names and extensions
@@ -281,7 +281,7 @@ async function registerKeys(keys, first) {
   enqueue(keys)
 }
 
-/* Every key an organisation or album refers to. */
+/* Every key a folder, album or organisation refers to. */
 async function referencedKeys() {
   const keys = new Set()
   const add = (key) => {
@@ -293,9 +293,15 @@ async function referencedKeys() {
     }
   }
 
+  /* Organisations stay until the migration to folders is cleaned up. */
   for (const organisation of await Organisation.find().lean()) {
     add(organisation.logo)
     add(organisation.cover)
+  }
+  for (const folder of await Folder.find().select('cover logo photos').lean()) {
+    add(folder.logo)
+    add(folder.cover)
+    ;(folder.photos || []).forEach(add)
   }
   for (const album of await Album.find().select('cover sections').lean()) {
     add(album.cover)
