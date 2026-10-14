@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A photo gallery (live at wolfproductions.photos) that groups albums in a tree of folders; each album is split into titled sections of photos. The backend has moved from organisations to folders; the frontend still uses the organisation routes, which the backend answers from the top-level folders. The repo holds two independent npm packages: a Vue 3 SPA at the root and an Express/MongoDB API in `backend/`. The photos are self-hosted: the originals are read from a folder (a mounted NAS share) and resized variants are generated once and served from disk.
+A photo gallery (live at wolfproductions.photos) that groups albums in a tree of folders; each album is split into titled sections of photos. Organisations were replaced by folders; old organisation links redirect to the top-level folder with the same id. The repo holds two independent npm packages: a Vue 3 SPA at the root and an Express/MongoDB API in `backend/`. The photos are self-hosted: the originals are read from a folder (a mounted NAS share) and resized variants are generated once and served from disk.
 
 ## Commands
 
@@ -29,7 +29,7 @@ There are no tests and no linter in either package.
 ## Things that will bite you
 
 - **`backend/.env` holds the production database credentials.** Without a `.env.local` that overrides `MONGODB_DATABASE`, a locally started backend reads and writes live data.
-- **Admin routes need the token.** `GET /api/library` and every POST/PUT/DELETE require `Authorization: Bearer <ADMIN_TOKEN>`. The frontend (`src/api.js`) asks for it with a `window.prompt` on the first 401 and keeps it in `localStorage` (`adminToken`), and sends it on every request. The `/create` and `/edit` pages themselves are still reachable by anyone; they just cannot browse or save.
+- **Admin routes need the token.** `GET /api/library`, `GET /api/folders` and every POST/PUT/DELETE require `Authorization: Bearer <ADMIN_TOKEN>`. The frontend keeps it in `localStorage` (`adminToken`) and sends it on every request; it is entered with the log-in icon in the top bar, or asked for with a `window.prompt` on a 401. The `new` and `edit` pages themselves are reachable by anyone; they just cannot browse or save.
 - **Visitors only see what is public.** Read routes check `visibility` (`tree.canView`): without the token, a private folder or album answers 404 and is left out of lists. After `migrate-folders.js` everything is private, so the site looks empty to visitors until folders are made public. `/media` and `GET /api/photos/original` do not check this yet.
 - **Dependencies are 2022-era majors** (Vite 2, Vue 3.2, Tailwind 3.1, Heroicons v1, Headless UI 1.6, Mongoose 6). Write against those APIs: Heroicons uses the v1 import paths and names (`@heroicons/vue/solid`, `MenuAlt2Icon`). `sharp` is current and is the reason for the Node version.
 - **`sharp` needs a CPU with SSE4.2 (or ARM64).** It does not run on the NAS itself (Synology DS412+, Atom D2700); the NAS only stores the originals. `variants.js` requires `sharp` lazily, so the API and `/media` keep working on a machine without it.
@@ -43,14 +43,14 @@ There are no tests and no linter in either package.
 Mongoose schemas live in `backend/models/` (registered in `models/index.js`), all routes in `backend/index.js`.
 
 - `Folder { title, description, parent, ancestors: [id], cover, logo, photos: [key], order, sort, visibility }` — `parent` is null at the top level; `ancestors` lists every folder above, top level first, so a subtree is one query (`{ ancestors: id }`). `photos` are loose photos next to the subfolders and albums.
-- `Album { title, date, cover, sections: [{ title, photos: [key] }], folder, ancestors, order, visibility, organisation }` — `ancestors` ends with `folder`; `organisation` is left over from before folders and only read by the old frontend.
+- `Album { title, date, cover, sections: [{ title, photos: [key] }], folder, ancestors, order, visibility, organisation }` — `ancestors` ends with `folder`; `organisation` is left over from before folders and no longer read.
 - `visibility` is `inherit` (default), `private` or `public`; `inherit` takes the nearest folder above that has a setting, and nothing set means private (`tree.visibilityOf`). A folder's logo is inherited the same way (`tree.logoOf`); a folder without a cover shows the newest album cover below it that the viewer may see (`tree.folderCard`).
 - `Organisation { title, logo, cover }` — kept until the migration is cleaned up; its keys still count as referenced.
 - `Photo { key, status: 'pending' | 'ready' | 'error', width, height, sourceMtimeMs, sourceSize, error }` — one record per key that a folder, album or organisation refers to; `width`/`height` are those of the `large` variant.
 
 Every image field (`logo`, `cover`, `photos[]`) is a **key**: a path relative to `PHOTOS_ROOT` with forward slashes, e.g. `WolfProductions/2022-05-21 - Bandjes Oerknal/blue_king-044.jpg`. The app never uploads photos; they are copied onto the NAS out of band and the album form only references existing files. `library.parseKey()` is the single validator every key passes before it touches the disk (no `..`, no backslashes, no segments starting with `.`, `@` or `#`).
 
-Folder routes: `GET /api/folders/root`, `GET /api/folders/:id` (the folder with `breadcrumb`, `folders`, `albums`, `photos` + `photoMeta`), `POST /api/folders`, `PUT /api/folders/:id` (a changed `parent` moves the whole subtree, `tree.moveSubtree`; a parent below the folder is refused), `DELETE /api/folders/:id` (only when empty, else 409). Album routes: `GET/PUT/DELETE /api/albums/:id`, `POST /api/albums` with `folder`. The old routes (`/api/organisations…`, `/api/album/:id`) stay for the current frontend and answer from the top-level folders, with the same visibility check; the old PUT ignores `organisation`, so it never moves an album. Tree logic (visibility, breadcrumb, cards, moving) is in `backend/tree.js`, which loads all folders at once. `GET /api/album/:id` returns the album plus `photoMeta: { [key]: { status, width, height } }` and `photoStats: { total, ready, pending, error }`; `sections[].photos` stay plain key strings. Async handlers are wrapped (`wrap()`) and errors end in one handler that only exposes `HttpError` codes.
+Folder routes: `GET /api/folders/root`, `GET /api/folders/:id` (the folder with `breadcrumb`, `folders`, `albums`, `photos` + `photoMeta`), `POST /api/folders`, `PUT /api/folders/:id` (a changed `parent` moves the whole subtree, `tree.moveSubtree`; a parent below the folder is refused), `DELETE /api/folders/:id` (only when empty, else 409). Album routes: `GET/PUT/DELETE /api/albums/:id`, `POST /api/albums` with `folder`. `GET /api/folders` (admin) is every folder as a flat list with its `path`, for the folder pickers; `GET /api/session` answers `{ admin }` for the token sent. The old routes (`/api/organisations…`, `/api/album/:id`) are no longer used by the frontend and answer from the top-level folders, with the same visibility check; the old PUT ignores `organisation`, so it never moves an album. Tree logic (visibility, breadcrumb, cards, moving) is in `backend/tree.js`, which loads all folders at once. `GET /api/albums/:id` returns the album plus its inherited `logo`, its `breadcrumb`, `photoMeta: { [key]: { status, width, height } }` and `photoStats: { total, ready, pending, error }`; `sections[].photos` stay plain key strings. Async handlers are wrapped (`wrap()`) and errors end in one handler that only exposes `HttpError` codes.
 
 ### Images
 
@@ -62,7 +62,11 @@ Folder routes: `GET /api/folders/root`, `GET /api/folders/:id` (the folder with 
 
 ### Frontend flow
 
-Routes (`src/router/index.js`) mirror the hierarchy, with Mongo ObjectIds as params: `/` organisations → `/:organisation_id` albums → `/:organisation_id/:album_id` gallery, plus `/:organisation_id/create` and `/:organisation_id/:album_id/edit`. Views are thin page shells; the logic is in `src/components/`. All API calls go through the axios instance in `src/api.js` (relative `/api`). `AlbumForm` serves both create and edit, switching on `$route.params.album_id`; its `prefix` is the library folder being browsed and is shared by the cover picker and every section picker.
+Routes (`src/router/index.js`), with Mongo ObjectIds as params: `/` top-level folders, `/f/:folder_id` a folder (subfolders, albums, loose photos), `/a/:album_id` the gallery, plus `/f/new?parent=`, `/f/:id/edit`, `/a/new?folder=` and `/a/:id/edit`. The old links (`/:organisation_id`, `/:organisation_id/:album_id`, …) redirect to these. Views are thin page shells with `TopBar` (logo, breadcrumb, admin buttons in its slot); the logic is in `src/components/`. All API calls go through the axios instance in `src/api.js` (relative `/api`).
+
+- `src/session.js` holds `session.admin`, checked against `GET /api/session` at startup and on log in/out (the icon in `TopBar`). Admin buttons and the visibility badges only show when it is true; the pages reload when it changes.
+- `AlbumForm` and `FolderForm` serve both create and edit, switching on the route param. Each keeps one `prefix` (the library folder being browsed) shared by all its `LibraryPicker`s (single key, or several with shift-click and select-all). When editing, the library opens at the folder of the first photo.
+- Loose photos in a folder reuse `GalleryPhotos` with a one-section stand-in album.
 
 Gallery state (`src/components/gallery/`):
 
@@ -82,4 +86,3 @@ Production runs this version at home: one Node process in a Proxmox LXC containe
 - Vue SFCs use the Options API (`data` / `mounted` / `methods`), not `<script setup>`.
 - Styling is Tailwind utility classes only (plugins: typography, forms, line-clamp, aspect-ratio), with Headless UI for interactive primitives. The accent colour is red/rose.
 - Prettier: no semicolons, single quotes, no trailing commas; `prettier-plugin-tailwindcss` sorts class names.
-- The page shells in `src/views/` started as Tailwind UI templates. `Organisations.vue` still carries the template's placeholder sidebar data (`navigation`, `projects`, `activity`) and non-functional Search/Create controls.

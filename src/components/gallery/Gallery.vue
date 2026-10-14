@@ -1,5 +1,6 @@
 <template>
-  <div class="relative">
+  <NotFound v-if="missing" />
+  <div v-else class="relative">
     <GalleryHeader :album="album" />
     <GalleryMenu :album="album" />
     <p
@@ -18,6 +19,8 @@ import GalleryHeader from './GalleryHeader.vue'
 import GalleryMenu from './GalleryMenu.vue'
 import GalleryPhotos from './GalleryPhotos.vue'
 
+import NotFound from '../../views/NotFound.vue'
+
 import api from '../../api'
 import moment from 'moment'
 
@@ -26,7 +29,8 @@ export default {
   components: {
     GalleryHeader,
     GalleryMenu,
-    GalleryPhotos
+    GalleryPhotos,
+    NotFound
   },
   data: () => ({
     album: {
@@ -37,20 +41,28 @@ export default {
       originalDate: ''
     },
     moment,
+    missing: false,
     polls: 0,
     pollTimer: null
   }),
   mounted() {
-    api.get(`/album/${this.$route.params.album_id}`).then((reponse) => {
-      this.album = reponse.data
-      this.album.sections.forEach((section) => {
-        section.active = false
+    api
+      .get(`/albums/${this.$route.params.album_id}`)
+      .then((reponse) => {
+        this.album = reponse.data
+        this.album.sections.forEach((section) => {
+          section.active = false
+        })
+        if (this.album.sections.length) this.album.sections[0].active = true
+        this.album.originalDate = this.album.date
+        this.album.date = this.album.date
+          ? this.moment(this.album.date).fromNow()
+          : ''
+        this.pollProgress()
       })
-      this.album.sections[0].active = true
-      this.album.originalDate = this.album.date
-      this.album.date = this.moment(this.album.date).fromNow()
-      this.pollProgress()
-    })
+      .catch((e) => {
+        if (e.response?.status == 404) this.missing = true
+      })
   },
   unmounted() {
     clearTimeout(this.pollTimer)
@@ -65,7 +77,7 @@ export default {
       this.pollTimer = setTimeout(async () => {
         try {
           const response = await api.get(
-            `/album/${this.$route.params.album_id}`
+            `/albums/${this.$route.params.album_id}`
           )
           this.album.photoMeta = response.data.photoMeta
           this.album.photoStats = response.data.photoStats
@@ -103,13 +115,11 @@ export default {
         }
       }
 
-      api.put(`/album/${this.$route.params.album_id}`, {
-        _id: this.album._id,
+      api.put(`/albums/${this.$route.params.album_id}`, {
         title: this.album.title,
         date: this.album.originalDate,
         cover: this.album.cover,
-        sections: this.album.sections,
-        organisation: this.album.organisation
+        sections: this.album.sections
       })
     }
   }

@@ -7,10 +7,10 @@
     />
 
     <!-- logo -->
-    <router-link :to="`/${organisation?._id}`">
+    <router-link :to="backTo" class="absolute top-8 left-8">
       <img
-        class="absolute top-8 left-8 h-8 w-auto"
-        :src="getPhotoUrl(organisation?.logo)"
+        class="h-8 w-auto max-w-[12rem] object-contain"
+        :src="album?.logo ? getPhotoUrl(album.logo) : Logo"
         alt="logo"
       />
     </router-link>
@@ -44,7 +44,6 @@
 </template>
 
 <script>
-import api from '../../api'
 import { getPhotoUrl } from '../../utils/photos'
 import Logo from '../../assets/white_text_bg.svg'
 
@@ -57,16 +56,16 @@ export default {
     }
   },
   data: () => ({
-    Logo,
-    organisation: null
+    Logo
   }),
-  mounted() {
-    // Get the organisation
-    api
-      .get(`/organisations/${this.$route.params.organisation_id}`)
-      .then((reponse) => {
-        this.organisation = reponse.data
-      })
+  computed: {
+    /* The logo leads back to the folder the album is in, as far as the visitor may see. */
+    backTo() {
+      const breadcrumb = this.album?.breadcrumb || []
+      return breadcrumb.length
+        ? `/f/${breadcrumb[breadcrumb.length - 1]._id}`
+        : '/'
+    }
   },
   methods: {
     getPhotoUrl
