@@ -219,7 +219,36 @@ async function viewable(Model, id, folders, viewer) {
  * The routes for the backend.
  */
 
+/* Whether the request carries the admin token, so the frontend knows to show the admin controls. */
+app.get('/api/session', (req, res) => res.send({ admin: isAdmin(req) }))
+
 /* Folders. */
+
+/* Every folder in one flat list, top level first, for the folder pickers of the admin forms. */
+app.get(
+  '/api/folders',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const folders = await tree.loadFolders()
+    const pathOf = (folder) =>
+      [...folder.ancestors, folder._id]
+        .map((id) => folders.get(String(id))?.title || '')
+        .join(' / ')
+    res.send(
+      [...folders.values()]
+        .map((folder) => ({
+          _id: folder._id,
+          title: folder.title,
+          parent: folder.parent,
+          ancestors: folder.ancestors,
+          visibility: folder.visibility,
+          path: pathOf(folder)
+        }))
+        .sort((a, b) => a.path.localeCompare(b.path, 'nl'))
+    )
+  })
+)
+
 app.get(
   '/api/folders/root',
   wrap(async (req, res) => {

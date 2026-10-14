@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const TOKEN_KEY = 'adminToken'
 
-function getToken() {
+export function getToken() {
   try {
     return localStorage.getItem(TOKEN_KEY)
   } catch (e) {
@@ -10,11 +10,19 @@ function getToken() {
   }
 }
 
-function setToken(token) {
+export function setToken(token) {
   try {
     localStorage.setItem(TOKEN_KEY, token)
   } catch (e) {
     /* Without storage the token is asked for again next time. */
+  }
+}
+
+export function clearToken() {
+  try {
+    localStorage.removeItem(TOKEN_KEY)
+  } catch (e) {
+    /* Nothing stored, nothing to remove. */
   }
 }
 
