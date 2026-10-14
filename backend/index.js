@@ -17,7 +17,7 @@ try {
 
 /* Get the mongoose library and the models. */
 const mongoose = require('mongoose')
-const { Folder, Album, Photo, Share } = require('./models')
+const { Folder, Album, Photo, Share, Settings } = require('./models')
 
 /* Get the photo library (the originals) and the variants made from it. */
 const library = require('./library')
@@ -538,6 +538,165 @@ app.delete(
     await Share.deleteMany({ 'target.id': album._id })
     await variants.pruneUnreferenced(albumKeys(album))
     res.send({ deleted: album._id })
+  })
+)
+
+/**
+ * The settings: what / shows, and the portfolio. Only public folders and
+ * albums can be featured, so the portfolio never shows anything private.
+ */
+async function loadSettings() {
+  return (await Settings.findOne()) || new Settings()
+}
+
+const PUBLIC = { admin: false, shares: [] }
+
+/* The featured items that exist and are public, as cards. */
+async function featuredCards(featured, folders) {
+  const cards = []
+  for (const { kind, id } of featured || []) {
+    if (kind == 'folder') {
+      const folder = folders.get(String(id))
+      if (folder && tree.canView(folder, folders, PUBLIC))
+        cards.push({
+          kind,
+          ...(await tree.folderCard(folder, folders, PUBLIC))
+        })
+    } else {
+      const album = await Album.findById(id).select('-sections').lean()
+      if (album && tree.canView(album, folders, PUBLIC))
+        cards.push({ kind, ...tree.albumCard(album, folders, PUBLIC) })
+    }
+  }
+  return cardsWithRefs(cards)
+}
+
+app.get(
+  '/api/settings',
+  wrap(async (req, res) => {
+    const settings = (await loadSettings()).toObject()
+    const portfolio = settings.portfolio || {}
+    const keys = portfolio.photos || []
+    const ref = await refsOf([portfolio.hero, ...keys])
+    res.send({
+      homepage: settings.homepage,
+      portfolio: {
+        title: portfolio.title || '',
+        intro: portfolio.intro || '',
+        hero: ref(portfolio.hero),
+        photos: keys.map(ref).filter(Boolean),
+        featured: await featuredCards(
+          portfolio.featured,
+          await tree.loadFolders()
+        ),
+        ...(await photoMeta(keys))
+      }
+    })
+  })
+)
+
+/* What the portfolio form edits, with keys, and the public folders and albums it can feature. */
+app.get(
+  '/api/settings/source',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const folders = await tree.loadFolders()
+    const pathOf = (node) =>
+      [
+        ...node.ancestors.map((id) => folders.get(String(id))?.title),
+        node.title
+      ]
+        .filter(Boolean)
+        .join(' / ')
+    const isPublic = (node) => tree.visibilityOf(node, folders) == 'public'
+    const albums = await Album.find()
+      .select('title ancestors visibility')
+      .lean()
+
+    res.send({
+      ...(await loadSettings()).toObject(),
+      candidates: [
+        ...[...folders.values()].filter(isPublic).map((folder) => ({
+          kind: 'folder',
+          id: folder._id,
+          path: pathOf(folder)
+        })),
+        ...albums.filter(isPublic).map((album) => ({
+          kind: 'album',
+          id: album._id,
+          path: pathOf(album)
+        }))
+      ].sort((a, b) => a.path.localeCompare(b.path, 'nl'))
+    })
+  })
+)
+
+app.put(
+  '/api/settings',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const settings = await loadSettings()
+    const previous = settings.toObject().portfolio || {}
+    const body = req.body
+    const invalid = []
+
+    if (body.homepage !== undefined) {
+      if (!['folders', 'portfolio'].includes(body.homepage))
+        throw new HttpError(400, 'invalid-homepage')
+      settings.homepage = body.homepage
+    }
+
+    const portfolio = body.portfolio || {}
+    const next = { ...previous }
+    if (portfolio.title !== undefined) next.title = String(portfolio.title)
+    if (portfolio.intro !== undefined) next.intro = String(portfolio.intro)
+    if (portfolio.hero !== undefined)
+      next.hero = portfolio.hero ? cleanKey(portfolio.hero, invalid) : ''
+    if (portfolio.photos !== undefined)
+      next.photos = [
+        ...new Set(
+          (Array.isArray(portfolio.photos) ? portfolio.photos : []).map((key) =>
+            cleanKey(key, invalid)
+          )
+        )
+      ]
+    if (invalid.length)
+      throw new HttpError(400, 'invalid-key', { keys: invalid })
+
+    /* Featuring something private would show it to everyone. */
+    if (portfolio.featured !== undefined) {
+      const folders = await tree.loadFolders()
+      const featured = []
+      for (const item of Array.isArray(portfolio.featured)
+        ? portfolio.featured
+        : []) {
+        const node =
+          item.kind == 'folder'
+            ? folders.get(String(item.id))
+            : item.kind == 'album' && mongoose.isValidObjectId(item.id)
+            ? await Album.findById(item.id)
+                .select('ancestors visibility')
+                .lean()
+            : null
+        if (!node) throw new HttpError(400, 'invalid-featured')
+        if (tree.visibilityOf(node, folders) != 'public')
+          throw new HttpError(400, 'featured-not-public')
+        featured.push({ kind: item.kind, id: node._id })
+      }
+      next.featured = featured
+    }
+
+    settings.portfolio = next
+    await settings.save()
+
+    const keys = [next.hero, ...(next.photos || [])].filter(Boolean)
+    await variants.registerKeys(keys, next.hero)
+    await variants.pruneUnreferenced(
+      [previous.hero, ...(previous.photos || [])].filter(
+        (key) => key && !keys.includes(key)
+      )
+    )
+    res.send({ saved: true })
   })
 )
 
