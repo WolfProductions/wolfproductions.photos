@@ -227,15 +227,15 @@ export default {
     api.get('/folders').then((response) => (this.folders = response.data))
 
     if (this.folderId) {
-      const data = (await api.get(`/folders/${this.folderId}`)).data
+      const data = (await api.get(`/folders/${this.folderId}/source`)).data
       this.folder = {
         title: data.title,
         description: data.description || '',
         parent: data.parent,
         visibility: data.visibility || 'inherit',
         sort: data.sort || 'date-desc',
-        cover: data.ownCover || '',
-        logo: data.ownLogo || '',
+        cover: data.cover || '',
+        logo: data.logo || '',
         photos: data.photos || []
       }
       this.originalParent = data.parent

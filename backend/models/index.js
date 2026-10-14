@@ -5,5 +5,6 @@ module.exports = {
   Organisation: mongoose.model('Organisation', require('./Organisation')),
   Folder: mongoose.model('Folder', require('./Folder')),
   Album: mongoose.model('Album', require('./Album')),
-  Photo: mongoose.model('Photo', require('./Photo'))
+  Photo: mongoose.model('Photo', require('./Photo')),
+  Share: mongoose.model('Share', require('./Share'))
 }

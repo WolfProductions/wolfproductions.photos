@@ -1,8 +1,10 @@
 /**
  * The variants: resized copies of the photos that albums, folders and
  * organisations refer to. They are made once, stored under VARIANTS_ROOT as
- * <variant>/<key>.<extension> and served from there as /media.
+ * <variant>/<publicId>.<extension> and served from there as /media. The
+ * publicId is random, so a photo's URL cannot be guessed from its key.
  */
+const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
 const config = require('./config')
@@ -35,6 +37,14 @@ const VARIANTS = {
     fit: 'inside',
     format: 'jpeg',
     quality: 85
+  },
+  /* Only for downloading. */
+  small: {
+    width: 1024,
+    height: 1024,
+    fit: 'inside',
+    format: 'jpeg',
+    quality: 85
   }
 }
 const EXTENSIONS = { webp: 'webp', jpeg: 'jpg' }
@@ -46,13 +56,32 @@ const MAX_RETRIES = 10
 
 const isSvg = (key) => key.toLowerCase().endsWith('.svg')
 
-function variantPath(key, variant) {
-  const extension = isSvg(key) ? 'svg' : EXTENSIONS[VARIANTS[variant].format]
+const extensionOf = (key, variant) =>
+  isSvg(key) ? 'svg' : EXTENSIONS[VARIANTS[variant].format]
+
+/* 22 random characters, safe in a URL and a file name. */
+const newPublicId = () => crypto.randomBytes(16).toString('base64url')
+
+function variantPath(photo, variant) {
+  return path.join(
+    config.VARIANTS_ROOT,
+    variant,
+    `${photo.publicId}.${extensionOf(photo.key, variant)}`
+  )
+}
+
+/* Where variants were stored before they were named after the publicId. */
+function legacyPath(key, variant) {
   return (
     path.join(config.VARIANTS_ROOT, variant, ...key.split('/')) +
     '.' +
-    extension
+    extensionOf(key, variant)
   )
+}
+
+/* What the frontend gets instead of a key; vector images keep their extension so they are served as SVG. */
+function refOf(photo) {
+  return photo.publicId + (isSvg(photo.key) ? '.svg' : '')
 }
 
 /* Write under a temporary dot name first, so a half-written file is never served. */
@@ -69,13 +98,13 @@ async function writeAtomic(file, data) {
   }
 }
 
-/* Make all variants of one photo. Returns the dimensions of the large one. */
-async function generate(key, source) {
+/* Make the given variants of one photo. Returns the dimensions of the large one, if it was made. */
+async function generate(photo, source, variants = Object.keys(VARIANTS)) {
   /* Vector images are served as they are. */
-  if (isSvg(key)) {
+  if (isSvg(photo.key)) {
     const data = await fs.promises.readFile(source.abs)
-    for (const variant of Object.keys(VARIANTS))
-      await writeAtomic(variantPath(key, variant), data)
+    for (const variant of variants)
+      await writeAtomic(variantPath(photo, variant), data)
     return {}
   }
 
@@ -83,7 +112,8 @@ async function generate(key, source) {
   const sharp = require('sharp')
   let dimensions = {}
 
-  for (const [variant, options] of Object.entries(VARIANTS)) {
+  for (const variant of variants) {
+    const options = VARIANTS[variant]
     const image = sharp(source.abs, { failOn: 'error' }).autoOrient().resize({
       width: options.width,
       height: options.height,
@@ -97,7 +127,7 @@ async function generate(key, source) {
     else image.webp({ quality: options.quality })
 
     const { data, info } = await image.toBuffer({ resolveWithObject: true })
-    await writeAtomic(variantPath(key, variant), data)
+    await writeAtomic(variantPath(photo, variant), data)
     if (variant == 'large')
       dimensions = { width: info.width, height: info.height }
   }
@@ -105,41 +135,84 @@ async function generate(key, source) {
   return dimensions
 }
 
-async function variantsExist(key) {
-  try {
-    for (const variant of Object.keys(VARIANTS))
-      await fs.promises.access(variantPath(key, variant))
-    return true
-  } catch (err) {
-    return false
-  }
+const exists = (file) =>
+  fs.promises.access(file).then(
+    () => true,
+    () => false
+  )
+
+/* The variants of a photo that are not on disk. */
+async function missingVariants(photo) {
+  const missing = []
+  for (const variant of Object.keys(VARIANTS))
+    if (!(await exists(variantPath(photo, variant)))) missing.push(variant)
+  return missing
 }
 
-async function removeVariants(key) {
-  for (const variant of Object.keys(VARIANTS)) {
-    const file = variantPath(key, variant)
-    await fs.promises.rm(file, { force: true })
-
-    /* Remove the folders this leaves empty. */
-    const top = path.join(config.VARIANTS_ROOT, variant)
-    let dir = path.dirname(file)
-    while (dir.startsWith(top + path.sep)) {
-      try {
-        await fs.promises.rmdir(dir)
-      } catch (err) {
-        break
-      }
-      dir = path.dirname(dir)
-    }
-  }
+async function removeVariants(photo) {
+  if (!photo.publicId) return
+  for (const variant of Object.keys(VARIANTS))
+    await fs.promises.rm(variantPath(photo, variant), { force: true })
 }
+
+/* Whether the original is the one the variants were made from. */
+const unchanged = (photo, source) =>
+  photo.sourceMtimeMs == source.mtimeMs && photo.sourceSize == source.size
 
 /* Whether there is nothing left to do for a photo, given its original. */
 async function isDone(photo, source) {
-  if (photo.sourceMtimeMs != source.mtimeMs || photo.sourceSize != source.size)
-    return false
-  if (photo.status == 'ready') return variantsExist(photo.key)
+  if (!unchanged(photo, source)) return false
+  if (photo.status == 'ready') return !(await missingVariants(photo)).length
   return photo.status == 'error' && photo.error == 'unreadable'
+}
+
+/* Give every photo record that has none a publicId. */
+async function assignPublicIds() {
+  const photos = await Photo.find({ publicId: { $exists: false } })
+    .select('_id')
+    .lean()
+  if (!photos.length) return
+  await Photo.bulkWrite(
+    photos.map((photo) => ({
+      updateOne: {
+        filter: { _id: photo._id, publicId: { $exists: false } },
+        update: { $set: { publicId: newPublicId() } }
+      }
+    }))
+  )
+}
+
+/**
+ * Move variants from the old layout (<variant>/<key>.<ext>) to their
+ * publicId, so they need not be made again. What is left in the old layout
+ * afterwards belongs to no photo, and is removed: its URLs are guessable.
+ */
+async function adoptLegacyVariants(photos) {
+  await library.mapLimit(photos, 8, async (photo) => {
+    for (const variant of Object.keys(VARIANTS)) {
+      const target = variantPath(photo, variant)
+      const legacy = legacyPath(photo.key, variant)
+      if ((await exists(target)) || !(await exists(legacy))) continue
+      await fs.promises.rename(legacy, target)
+    }
+  })
+
+  /* The new layout is flat, so every folder in it is from the old one. */
+  for (const variant of Object.keys(VARIANTS)) {
+    const top = path.join(config.VARIANTS_ROOT, variant)
+    let entries = []
+    try {
+      entries = await fs.promises.readdir(top, { withFileTypes: true })
+    } catch (err) {
+      continue
+    }
+    for (const entry of entries)
+      if (entry.isDirectory())
+        await fs.promises.rm(path.join(top, entry.name), {
+          recursive: true,
+          force: true
+        })
+  }
 }
 
 /**
@@ -203,6 +276,13 @@ function idle() {
 async function processKey(key) {
   const photo = await Photo.findOne({ key }).lean()
   if (!photo) return
+  if (!photo.publicId) {
+    await Photo.updateOne(
+      { _id: photo._id, publicId: { $exists: false } },
+      { $set: { publicId: newPublicId() } }
+    )
+    photo.publicId = (await Photo.findById(photo._id).lean()).publicId
+  }
 
   const source = await library.statSource(key)
   if (!source) {
@@ -222,9 +302,15 @@ async function processKey(key) {
 
   if (await isDone(photo, source)) return
 
+  /* Variants added later (or deleted from disk) are made without redoing the others. */
+  const variants =
+    photo.status == 'ready' && unchanged(photo, source)
+      ? await missingVariants(photo)
+      : Object.keys(VARIANTS)
+
   const version = { sourceMtimeMs: source.mtimeMs, sourceSize: source.size }
   try {
-    const dimensions = await generate(key, source)
+    const dimensions = await generate(photo, source, variants)
 
     /* The original changed while it was being read. */
     const after = await library.statSource(key)
@@ -266,7 +352,9 @@ async function registerKeys(keys, first) {
         updateOne: {
           filter: { key },
           /* Only on insert: a second reference must not take a photo offline. */
-          update: { $setOnInsert: { status: 'pending' } },
+          update: {
+            $setOnInsert: { status: 'pending', publicId: newPublicId() }
+          },
           upsert: true
         }
       })),
@@ -319,7 +407,9 @@ async function referencedKeys() {
  */
 async function syncAll({ prune } = {}) {
   const keys = await referencedKeys()
+  await assignPublicIds()
   const photos = await Photo.find().lean()
+  await adoptLegacyVariants(photos)
   const byKey = new Map(photos.map((photo) => [photo.key, photo]))
 
   const todo = await library.mapLimit([...keys], 8, async (key) => {
@@ -340,7 +430,8 @@ async function syncAll({ prune } = {}) {
 /* Take photos offline: remove their variants and their record. */
 async function pruneKeys(keys) {
   if (!keys.length) return
-  for (const key of keys) await removeVariants(key)
+  const photos = await Photo.find({ key: { $in: keys } }).lean()
+  for (const photo of photos) await removeVariants(photo)
   await Photo.deleteMany({ key: { $in: keys } })
 }
 
@@ -351,24 +442,10 @@ async function pruneUnreferenced(candidates) {
   await pruneKeys(candidates.filter((key) => !keys.has(key)))
 }
 
-/* The status and dimensions of the given keys, as sent along with an album. */
-async function photoMeta(keys) {
-  const photos = await Photo.find({ key: { $in: keys } }).lean()
-  const byKey = new Map(photos.map((photo) => [photo.key, photo]))
-  const photoStats = { total: keys.length, ready: 0, pending: 0, error: 0 }
-
-  const photoMeta = Object.fromEntries(
-    keys.map((key) => {
-      const photo = byKey.get(key) || { status: 'pending' }
-      photoStats[photo.status]++
-      return [
-        key,
-        { status: photo.status, width: photo.width, height: photo.height }
-      ]
-    })
-  )
-
-  return { photoMeta, photoStats }
+/* The photo records of the given keys, by key. */
+async function lookup(keys) {
+  const photos = await Photo.find({ key: { $in: [...new Set(keys)] } }).lean()
+  return new Map(photos.map((photo) => [photo.key, photo]))
 }
 
 module.exports = {
@@ -376,7 +453,9 @@ module.exports = {
   registerKeys,
   syncAll,
   pruneUnreferenced,
-  photoMeta,
+  lookup,
+  refOf,
+  variantPath,
   idle
 }
 

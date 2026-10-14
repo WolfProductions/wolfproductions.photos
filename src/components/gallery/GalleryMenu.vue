@@ -18,6 +18,10 @@
         v-if="session.admin"
         class="ml-auto flex items-center space-x-4 md:hidden"
       >
+        <button type="button" @click="sharing = true">
+          <ShareIcon class="m-2 h-5 w-5 text-gray-700" />
+          <span class="sr-only">Share</span>
+        </button>
         <router-link :to="`/a/${$route.params.album_id}/edit`">
           <PencilIcon class="m-2 h-5 w-5 text-gray-700" />
         </router-link>
@@ -49,23 +53,35 @@
         :visibility="album.effectiveVisibility"
         :inherited="album.visibility == 'inherit'"
       />
+      <button type="button" @click="sharing = true">
+        <ShareIcon class="m-2 h-5 w-5 text-gray-700" />
+        <span class="sr-only">Share</span>
+      </button>
       <router-link :to="`/a/${$route.params.album_id}/edit`">
         <PencilIcon class="m-2 h-5 w-5 text-gray-700" />
       </router-link>
     </div>
+
+    <ShareDialog
+      v-if="session.admin && album._id"
+      :open="sharing"
+      :target="{ kind: 'album', id: album._id, title: album.title }"
+      @close="sharing = false"
+    />
   </div>
 </template>
 
 <script>
-import { PencilIcon } from '@heroicons/vue/outline'
+import { PencilIcon, ShareIcon } from '@heroicons/vue/outline'
 
+import ShareDialog from '../shares/ShareDialog.vue'
 import VisibilityBadge from '../folders/VisibilityBadge.vue'
 import { session } from '../../session'
 
 export default {
   name: 'GalleryMenu',
-  components: { PencilIcon, VisibilityBadge },
-  data: () => ({ session }),
+  components: { PencilIcon, ShareDialog, ShareIcon, VisibilityBadge },
+  data: () => ({ session, sharing: false }),
   props: {
     album: {
       type: Object,

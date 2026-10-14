@@ -1,13 +1,17 @@
 import { reactive } from 'vue'
-import api, { clearToken, getToken, setToken } from './api'
+import api, { clearToken, setToken } from './api'
 
-/* Whether this browser holds a valid admin token; the admin controls only show when it does. */
-export const session = reactive({ admin: false })
+/**
+ * Whether this browser holds a valid admin token (the admin controls only
+ * show when it does), and what the share links it opened point at.
+ */
+export const session = reactive({ admin: false, shared: [] })
 
 export async function checkSession() {
-  if (!getToken()) return (session.admin = false)
   try {
-    session.admin = (await api.get('/session')).data.admin
+    const { admin, shared } = (await api.get('/session')).data
+    session.admin = admin
+    session.shared = shared
   } catch (e) {
     session.admin = false
   }
@@ -27,4 +31,5 @@ export async function login() {
 export function logout() {
   clearToken()
   session.admin = false
+  checkSession()
 }
