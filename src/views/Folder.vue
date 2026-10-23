@@ -75,7 +75,7 @@
             {{ folder.photoStats.total }}
           </p>
           <div class="-mx-2 md:-mx-6">
-            <GalleryPhotos :album="looseAlbum" />
+            <GalleryPhotos :album="looseAlbum" :set-cover="setCover" />
           </div>
         </section>
 
@@ -136,6 +136,7 @@ export default {
       return {
         sections: [{ title: '', photos: this.folder.photos, active: true }],
         photoMeta: this.folder.photoMeta,
+        cover: this.folder.cover,
         canDownload: this.folder.canDownload
       }
     }
@@ -162,6 +163,13 @@ export default {
         if (e.response?.status == 404) this.missing = true
         else throw e
       }
+    },
+    async setCover(ref) {
+      const response = await api.put(
+        `/folders/${this.$route.params.folder_id}/cover`,
+        { ref }
+      )
+      this.folder.cover = response.data.cover
     },
     /* While loose photos are being processed, check again now and then. */
     pollProgress() {

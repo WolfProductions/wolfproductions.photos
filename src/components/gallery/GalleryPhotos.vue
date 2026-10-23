@@ -30,6 +30,7 @@ import PhotoSwipeLightbox from 'photoswipe/lightbox'
 import 'photoswipe/style.css'
 
 import { DOWNLOAD_SIZES, downloadPhoto, getPhotoUrl } from '../../utils/photos'
+import { session } from '../../session'
 
 export default {
   name: 'GalleryPhotos',
@@ -38,9 +39,15 @@ export default {
     album: {
       type: Object,
       required: true
+    },
+    /* Makes a photo (by ref) the cover; without it there is no cover button. */
+    setCover: {
+      type: Function,
+      default: null
     }
   },
   data: () => ({
+    session,
     lightbox: null,
     photos: []
   }),
@@ -50,6 +57,43 @@ export default {
       children: 'a',
       showHideAnimationType: 'zoom',
       pswpModule: () => import('photoswipe')
+    })
+
+    // For the admin, a button in the toolbar that makes the photo on screen the cover
+    // (of the album, or of the folder for loose photos)
+    this.lightbox.on('uiRegister', () => {
+      if (!this.setCover || !this.session.admin) return
+      this.lightbox.pswp.ui.registerElement({
+        name: 'cover-button',
+        order: 7,
+        isButton: true,
+        title: 'Set as cover',
+        html: {
+          isCustomSVG: true,
+          inner:
+            '<path d="M16 8l2 5.25 5.6.25-4.4 3.5 1.5 5.5-4.7-3.1-4.7 3.1 1.5-5.5-4.4-3.5 5.6-.25Z" id="pswp__icn-cover"/>',
+          outlineID: 'pswp__icn-cover'
+        },
+        onInit: (el, pswp) => {
+          const ref = () => pswp.currSlide?.data.element?.dataset.ref
+          // Coloured while the photo on screen is the cover
+          const update = () => {
+            const isCover = ref() && ref() == this.album.cover
+            el.style.setProperty('--pswp-icon-color', isCover ? '#f43f5e' : '')
+            el.title = isCover ? 'Cover' : 'Set as cover'
+          }
+          pswp.on('change', update)
+          el.addEventListener('click', async () => {
+            try {
+              await this.setCover(ref())
+              await this.$nextTick()
+              update()
+            } catch (e) {
+              window.alert('The cover could not be changed.')
+            }
+          })
+        }
+      })
     })
 
     // A button in the toolbar with a menu of the sizes to download, when the viewer may

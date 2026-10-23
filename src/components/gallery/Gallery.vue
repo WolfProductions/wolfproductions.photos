@@ -10,7 +10,7 @@
       Processing photos… {{ album.photoStats.ready }} /
       {{ album.photoStats.total }}
     </p>
-    <GalleryPhotos :album="album" />
+    <GalleryPhotos :album="album" :set-cover="setCover" />
   </div>
 </template>
 
@@ -69,6 +69,13 @@ export default {
     this.pollTimer = null
   },
   methods: {
+    async setCover(ref) {
+      const response = await api.put(
+        `/albums/${this.$route.params.album_id}/cover`,
+        { ref }
+      )
+      this.album.cover = response.data.cover
+    },
     // While photos are still being processed, refresh only their status, so
     // the section the visitor picked stays as it is
     pollProgress() {
