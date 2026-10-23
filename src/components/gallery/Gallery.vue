@@ -1,7 +1,16 @@
 <template>
   <NotFound v-if="missing" />
   <div v-else class="relative">
-    <GalleryHeader :album="album" />
+    <GalleryHeader v-if="hasCover" :album="album" />
+    <!-- Without a cover the photos start right below a plain top bar; the
+         wrapper keeps the bar from sticking, so only the menu does -->
+    <div v-else-if="album._id">
+      <TopBar
+        :logo="album.logo"
+        :breadcrumb="album.breadcrumb"
+        :current="album.title"
+      />
+    </div>
     <GalleryMenu :album="album" />
     <p
       v-if="album.photoStats?.pending"
@@ -19,6 +28,7 @@ import GalleryHeader from './GalleryHeader.vue'
 import GalleryMenu from './GalleryMenu.vue'
 import GalleryPhotos from './GalleryPhotos.vue'
 
+import TopBar from '../layout/TopBar.vue'
 import NotFound from '../../views/NotFound.vue'
 
 import api from '../../api'
@@ -30,6 +40,7 @@ export default {
     GalleryHeader,
     GalleryMenu,
     GalleryPhotos,
+    TopBar,
     NotFound
   },
   data: () => ({
@@ -45,6 +56,15 @@ export default {
     polls: 0,
     pollTimer: null
   }),
+  computed: {
+    /* A cover that can be shown: set, and its variants made (not pending or failed). */
+    hasCover() {
+      const cover = this.album.cover
+      if (!cover) return false
+      const status = this.album.photoMeta?.[cover]?.status
+      return !status || status == 'ready'
+    }
+  },
   mounted() {
     api
       .get(`/albums/${this.$route.params.album_id}`)
