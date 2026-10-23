@@ -200,6 +200,12 @@ async function photoMeta(keys) {
   return { photoMeta, photoStats }
 }
 
+/* The photo a ref from a request stands for, or null. */
+async function photoOfRef(ref) {
+  const publicId = String(ref || '').replace(/\.svg$/, '')
+  return publicId ? Photo.findOne({ publicId }).lean() : null
+}
+
 /* Cards with refs instead of keys. */
 async function cardsWithRefs(cards) {
   const ref = await refsOf(cards.flatMap((card) => [card.cover, card.logo]))
@@ -440,6 +446,29 @@ app.put(
   })
 )
 
+/* Make one of the folder's loose photos its cover, by the ref the folder page shows. */
+app.put(
+  '/api/folders/:folder_id/cover',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const folder = await Folder.findById(objectId(req.params.folder_id))
+    if (!folder) throw new HttpError(404, 'not-found')
+
+    const photo = await photoOfRef(req.body.ref)
+    if (!photo || !(folder.photos || []).includes(photo.key))
+      throw new HttpError(400, 'not-in-folder')
+
+    const previous = folder.cover
+    folder.cover = photo.key
+    await folder.save()
+
+    /* A previous cover that the folder no longer uses goes offline, unless something else still uses it. */
+    if (previous && !tree.folderKeys(folder).includes(previous))
+      await variants.pruneUnreferenced([previous])
+    res.send({ cover: variants.refOf(photo) })
+  })
+)
+
 /* Only an empty folder can be deleted, so nothing disappears by accident. */
 app.delete(
   '/api/folders/:folder_id',
@@ -523,6 +552,31 @@ app.put(
       previousKeys.filter((key) => !keys.includes(key))
     )
     res.send(await albumResponse(album, folders, await viewerOf(req)))
+  })
+)
+
+/* Make one of the album's own photos its cover, by the ref the gallery shows. */
+app.put(
+  '/api/albums/:album_id/cover',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const album = await Album.findById(objectId(req.params.album_id))
+    if (!album) throw new HttpError(404, 'not-found')
+
+    const photo = await photoOfRef(req.body.ref)
+    const inAlbum = album.sections.some((section) =>
+      section.photos.includes(photo?.key)
+    )
+    if (!photo || !inAlbum) throw new HttpError(400, 'not-in-album')
+
+    const previous = album.cover
+    album.cover = photo.key
+    await album.save()
+
+    /* A previous cover that was not in the album itself goes offline, unless something else still uses it. */
+    if (previous && !albumKeys(album).includes(previous))
+      await variants.pruneUnreferenced([previous])
+    res.send({ cover: variants.refOf(photo) })
   })
 )
 
