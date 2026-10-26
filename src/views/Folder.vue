@@ -18,6 +18,14 @@
         >
           Share
         </button>
+        <button
+          v-if="canOrder && !ordering"
+          type="button"
+          class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2"
+          @click="startOrdering()"
+        >
+          Change order
+        </button>
         <AdminButton :to="`/f/${folder._id}/edit`">Edit</AdminButton>
         <AdminButton :to="{ path: '/f/new', query: { parent: folder._id } }"
           >New folder</AdminButton
@@ -57,13 +65,17 @@
 
         <CardGrid
           v-if="folder.folders.length"
-          :items="folder.folders"
+          :items="ordering ? ordering.folders : folder.folders"
+          :ordering="Boolean(ordering)"
           type="folder"
+          @update:items="ordering.folders = $event"
         />
         <CardGrid
           v-if="folder.albums.length"
-          :items="folder.albums"
+          :items="ordering ? ordering.albums : folder.albums"
+          :ordering="Boolean(ordering)"
           type="album"
+          @update:items="ordering.albums = $event"
         />
 
         <section v-if="folder.photos.length">
@@ -82,6 +94,20 @@
         <p v-if="empty" class="py-16 text-center text-sm text-gray-500">
           This folder is empty.
         </p>
+
+        <OrderBar
+          v-if="ordering"
+          :saving="ordering.saving"
+          :error="ordering.error"
+          @cancel="ordering = null"
+          @save="saveOrder()"
+        >
+          Drag the cards, or use their arrows.
+          <template v-if="folder.sort != 'manual'">
+            Saving changes the order of this folder from
+            {{ SORT_LABELS[folder.sort] || 'newest albums first' }} to manual.
+          </template>
+        </OrderBar>
       </div>
     </main>
 
@@ -103,6 +129,7 @@ import AdminButton from '../components/layout/AdminButton.vue'
 import CardGrid from '../components/folders/CardGrid.vue'
 import GalleryPhotos from '../components/gallery/GalleryPhotos.vue'
 import NotFound from './NotFound.vue'
+import OrderBar from '../components/folders/OrderBar.vue'
 import ShareDialog from '../components/shares/ShareDialog.vue'
 import TopBar from '../components/layout/TopBar.vue'
 import VisibilityBadge from '../components/folders/VisibilityBadge.vue'
@@ -115,21 +142,28 @@ export default {
     CardGrid,
     GalleryPhotos,
     NotFound,
+    OrderBar,
     ShareDialog,
     TopBar,
     VisibilityBadge
   },
   data: () => ({
+    SORT_LABELS: { 'date-desc': 'newest albums first', title: 'by title' },
     folder: null,
     missing: false,
     session,
     sharing: false,
+    /* While the admin puts the cards in order: { folders, albums, saving, error }. */
+    ordering: null,
     pollTimer: null
   }),
   computed: {
     empty() {
       const { folders, albums, photos } = this.folder
       return !folders.length && !albums.length && !photos.length
+    },
+    canOrder() {
+      return this.folder.folders.length > 1 || this.folder.albums.length > 1
     },
     /* The loose photos in the shape the gallery grid takes. */
     looseAlbum() {
@@ -153,6 +187,7 @@ export default {
     async load() {
       clearTimeout(this.pollTimer)
       const id = this.$route.params.folder_id
+      this.ordering = null
       try {
         const folder = (await api.get(`/folders/${id}`)).data
         if (id != this.$route.params.folder_id) return
@@ -162,6 +197,30 @@ export default {
       } catch (e) {
         if (e.response?.status == 404) this.missing = true
         else throw e
+      }
+    },
+    startOrdering() {
+      const { folders, albums } = this.folder
+      this.ordering = {
+        folders: [...folders],
+        albums: [...albums],
+        saving: false,
+        error: ''
+      }
+    },
+    async saveOrder() {
+      const ordering = this.ordering
+      ordering.saving = true
+      ordering.error = ''
+      try {
+        await api.put(`/folders/${this.folder._id}/order`, {
+          folders: ordering.folders.map((item) => item._id),
+          albums: ordering.albums.map((item) => item._id)
+        })
+        await this.load()
+      } catch (e) {
+        ordering.error = 'The order could not be saved.'
+        ordering.saving = false
       }
     },
     async setCover(ref) {

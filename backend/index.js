@@ -475,6 +475,50 @@ app.put(
   })
 )
 
+/**
+ * Put the subfolders and albums directly inside a folder in the order the
+ * admin dragged them in: `folders` and `albums` are lists of ids, and
+ * 'root' is the top level, which only has folders. Ordering a folder by
+ * hand makes its order manual.
+ */
+app.put(
+  '/api/folders/:folder_id/order',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const root = req.params.folder_id == 'root'
+    const parent = root ? null : objectId(req.params.folder_id)
+    const folders = await tree.loadFolders()
+    if (parent && !folders.has(String(parent)))
+      throw new HttpError(404, 'not-found')
+
+    const ids = (list) => (Array.isArray(list) ? list.map(String) : [])
+    const folderIds = ids(req.body.folders)
+    const albumIds = root ? [] : ids(req.body.albums)
+
+    const inside = (id) =>
+      folders.has(id) &&
+      String(folders.get(id).parent || '') == String(parent || '')
+    if (!folderIds.every(inside)) throw new HttpError(400, 'not-inside')
+    if (!albumIds.every((id) => mongoose.isValidObjectId(id)))
+      throw new HttpError(400, 'not-inside')
+    const albumsInside = await Album.countDocuments({
+      _id: { $in: albumIds },
+      folder: parent
+    })
+    if (albumsInside != new Set(albumIds).size)
+      throw new HttpError(400, 'not-inside')
+
+    const orderOf = (list) =>
+      list.map((id, order) => ({
+        updateOne: { filter: { _id: id }, update: { $set: { order } } }
+      }))
+    if (folderIds.length) await Folder.bulkWrite(orderOf(folderIds))
+    if (albumIds.length) await Album.bulkWrite(orderOf(albumIds))
+    if (parent) await Folder.updateOne({ _id: parent }, { sort: 'manual' })
+    res.send({ saved: true })
+  })
+)
+
 /* Only an empty folder can be deleted, so nothing disappears by accident. */
 app.delete(
   '/api/folders/:folder_id',
