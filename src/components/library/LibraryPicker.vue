@@ -1,160 +1,346 @@
 <template>
   <div class="flex flex-col">
-    <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
-      <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
-        <div
-          class="relative max-h-96 overflow-y-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg"
-        >
-          <table class="min-w-full table-fixed divide-y divide-gray-300">
-            <thead class="sticky top-0 z-[1] bg-gray-50">
-              <tr>
-                <th scope="col" class="relative w-12 px-6 sm:w-16 sm:px-8">
-                  <input
-                    v-if="multiple && photos.length"
-                    type="checkbox"
-                    class="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 sm:left-6"
-                    :checked="selectedHere == photos.length"
-                    :indeterminate="
-                      selectedHere > 0 && selectedHere < photos.length
-                    "
-                    @change="selectAll($event.target.checked)"
-                  />
-                </th>
-                <th
-                  scope="col"
-                  class="min-w-[12rem] py-3.5 pr-3 text-left text-sm font-semibold text-gray-900"
-                >
-                  {{ prefix || '/' }}
-                </th>
-                <th
-                  scope="col"
-                  class="min-w-[12rem] py-3.5 pr-3 text-left text-sm font-semibold text-gray-900"
-                >
-                  Date taken
-                </th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 bg-white">
-              <tr
-                v-for="file in files"
-                :key="file.key + file.name"
-                :class="[
-                  file.type == 'file' && 'cursor-pointer select-none',
-                  isSelected(file) && 'bg-gray-50'
-                ]"
-                @click="file.type == 'file' && toggle(file, $event)"
-              >
-                <td class="relative w-12 px-6 sm:w-16 sm:px-8">
-                  <div
-                    v-if="isSelected(file)"
-                    class="absolute inset-y-0 left-0 w-0.5 bg-red-600"
-                  ></div>
-                  <input
-                    v-if="file.type == 'file' && multiple"
-                    type="checkbox"
-                    class="pointer-events-none absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 sm:left-6"
-                    :checked="isSelected(file)"
-                    tabindex="-1"
-                  />
-                  <CheckIcon
-                    v-else-if="isSelected(file)"
-                    class="h-5 w-5 text-red-500"
-                  />
-                </td>
-                <td
-                  :class="[
-                    'flex items-center space-x-2 whitespace-nowrap py-1 pr-3 text-sm font-medium',
-                    isSelected(file) ? 'text-red-600' : 'text-gray-900'
-                  ]"
-                >
-                  <template v-if="file.type == 'folder'">
-                    <FolderIcon class="h-5 w-5 text-gray-500" />
-                    <span
-                      class="cursor-pointer hover:underline"
-                      @click="$emit('open', file.key)"
-                      >{{ file.name }}</span
-                    >
-                  </template>
-                  <span v-else>{{ file.name }}</span>
-                </td>
-                <td class="text-sm text-gray-500">
-                  {{
-                    file.created
-                      ? moment(file.created).format('D MMM YYYY HH:mm:ss')
-                      : ''
-                  }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-    <div v-if="multiple || modelValue" class="mt-2 flex text-xs text-gray-500">
-      <span v-if="multiple">{{ modelValue.length }} selected</span>
-      <span v-else class="truncate">{{ modelValue }}</span>
-      <button
-        v-if="multiple ? modelValue.length : modelValue"
-        type="button"
-        class="ml-auto font-medium text-red-600 hover:text-red-500"
-        @click="$emit('update:modelValue', multiple ? [] : '')"
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <nav
+        class="flex min-w-0 flex-1 items-center text-sm"
+        aria-label="Folder in the library"
       >
-        Clear
-      </button>
+        <button
+          type="button"
+          class="flex-shrink-0 rounded p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+          @click="$emit('open', '')"
+        >
+          <HomeIcon class="h-4 w-4" />
+          <span class="sr-only">Library</span>
+        </button>
+        <template v-for="(crumb, index) in crumbs" :key="crumb.path">
+          <ChevronRightIcon class="h-4 w-4 flex-shrink-0 text-gray-300" />
+          <button
+            type="button"
+            :class="[
+              'min-w-0 truncate rounded px-1 py-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500',
+              index == crumbs.length - 1
+                ? 'font-medium text-gray-900'
+                : 'text-gray-500 hover:text-gray-700'
+            ]"
+            :title="crumb.name"
+            @click="$emit('open', crumb.path)"
+          >
+            {{ crumb.name }}
+          </button>
+        </template>
+      </nav>
+
+      <label
+        v-if="multiple && photos.length"
+        class="flex items-center text-sm text-gray-700"
+      >
+        <input
+          type="checkbox"
+          class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+          :checked="selectedHere == photos.length"
+          :indeterminate="selectedHere > 0 && selectedHere < photos.length"
+          @change="selectAll($event.target.checked)"
+        />
+        <span class="ml-2">Select all {{ photos.length }}</span>
+      </label>
+
+      <span class="isolate inline-flex rounded-md shadow-sm">
+        <button
+          v-for="(option, index) in VIEWS"
+          :key="option.value"
+          type="button"
+          :class="[
+            'relative inline-flex items-center border border-gray-300 px-2 py-1.5 focus:z-10 focus:outline-none focus:ring-1 focus:ring-red-500',
+            index == 0 ? 'rounded-l-md' : '-ml-px rounded-r-md',
+            view == option.value
+              ? 'bg-gray-100 text-gray-900'
+              : 'bg-white text-gray-400 hover:bg-gray-50'
+          ]"
+          :aria-pressed="view == option.value"
+          @click="setView(option.value)"
+        >
+          <component :is="option.icon" class="h-4 w-4" />
+          <span class="sr-only">{{ option.label }}</span>
+        </button>
+      </span>
     </div>
+
+    <p v-if="loading" class="mt-6 text-sm text-gray-500">Loading…</p>
+
+    <template v-else>
+      <div
+        v-if="folders.length"
+        class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"
+      >
+        <button
+          v-for="folder in folders"
+          :key="folder.key"
+          type="button"
+          class="flex items-center rounded-md border border-gray-200 px-3 py-2 text-left text-sm text-gray-700 hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+          :title="folder.name"
+          @click="$emit('open', folder.key)"
+        >
+          <FolderIcon class="mr-2 h-5 w-5 flex-shrink-0 text-gray-400" />
+          <span class="truncate">{{ folder.name }}</span>
+        </button>
+      </div>
+
+      <ul
+        v-if="photos.length && view == 'grid'"
+        class="mt-4 grid grid-cols-3 gap-x-3 gap-y-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
+      >
+        <li v-for="photo in photos" :key="photo.key">
+          <button
+            type="button"
+            class="group relative block w-full select-none rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+            :aria-pressed="isSelected(photo)"
+            :title="describe(photo)"
+            @click="toggle(photo, $event)"
+            @dblclick="!multiple && $emit('confirm')"
+          >
+            <LibraryPreview
+              :photo-key="photo.key"
+              :class="[
+                'aspect-[3/2] w-full rounded-md transition',
+                isSelected(photo)
+                  ? 'ring-2 ring-red-600 ring-offset-2'
+                  : 'group-hover:opacity-80'
+              ]"
+            />
+            <span
+              v-if="isSelected(photo)"
+              class="absolute top-1.5 left-1.5 flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-semibold text-white shadow"
+            >
+              <template v-if="multiple">{{
+                positions.get(photo.key)
+              }}</template>
+              <CheckIcon v-else class="h-4 w-4" />
+            </span>
+            <span
+              v-else
+              class="absolute top-1.5 left-1.5 h-6 w-6 rounded-full border-2 border-white bg-black bg-opacity-20 opacity-0 shadow group-hover:opacity-100"
+            />
+            <span
+              v-if="labels[photo.key]"
+              class="absolute inset-x-1.5 bottom-1.5 truncate rounded bg-black bg-opacity-60 px-1.5 py-0.5 text-left text-xs text-white"
+            >
+              In {{ labels[photo.key] }}
+            </span>
+          </button>
+          <p
+            :class="[
+              'mt-1.5 truncate text-xs',
+              isSelected(photo) ? 'font-medium text-red-600' : 'text-gray-500'
+            ]"
+          >
+            {{ photo.name }}
+          </p>
+        </li>
+      </ul>
+
+      <table
+        v-else-if="photos.length"
+        class="mt-4 min-w-full divide-y divide-gray-200"
+      >
+        <thead>
+          <tr>
+            <th scope="col" class="w-16 py-2 pr-3"></th>
+            <th
+              scope="col"
+              class="py-2 pr-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500"
+            >
+              Name
+            </th>
+            <th
+              scope="col"
+              class="py-2 pr-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500"
+            >
+              Taken
+            </th>
+            <th
+              v-if="hasLabels"
+              scope="col"
+              class="py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500"
+            >
+              Also in
+            </th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <tr
+            v-for="photo in photos"
+            :key="photo.key"
+            :class="[
+              'cursor-pointer select-none',
+              isSelected(photo) ? 'bg-red-50' : 'hover:bg-gray-50'
+            ]"
+            @click="toggle(photo, $event)"
+            @dblclick="!multiple && $emit('confirm')"
+          >
+            <td class="relative py-1 pr-3">
+              <LibraryPreview
+                :photo-key="photo.key"
+                class="aspect-[3/2] w-16 rounded"
+              />
+              <span
+                v-if="isSelected(photo)"
+                class="absolute top-0 left-0 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white"
+              >
+                <template v-if="multiple">{{
+                  positions.get(photo.key)
+                }}</template>
+                <CheckIcon v-else class="h-3.5 w-3.5" />
+              </span>
+            </td>
+            <td
+              :class="[
+                'whitespace-nowrap py-1 pr-3 text-sm',
+                isSelected(photo) ? 'font-medium text-red-600' : 'text-gray-900'
+              ]"
+            >
+              {{ photo.name }}
+            </td>
+            <td class="whitespace-nowrap py-1 pr-3 text-sm text-gray-500">
+              {{ taken(photo) }}
+            </td>
+            <td v-if="hasLabels" class="py-1 text-sm text-gray-500">
+              {{ labels[photo.key] }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p v-if="!photos.length" class="mt-4 text-sm text-gray-500">
+        {{
+          folders.length
+            ? 'There are no photos here, only folders.'
+            : 'This folder is empty.'
+        }}
+      </p>
+    </template>
   </div>
 </template>
 
 <script>
 import moment from 'moment'
-import { CheckIcon, FolderIcon } from '@heroicons/vue/solid'
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  FolderIcon,
+  HomeIcon,
+  ViewGridIcon,
+  ViewListIcon
+} from '@heroicons/vue/solid'
+
+import LibraryPreview from './LibraryPreview.vue'
+
+const VIEW_KEY = 'libraryView'
+
+function storedView() {
+  try {
+    return localStorage.getItem(VIEW_KEY) == 'list' ? 'list' : 'grid'
+  } catch (e) {
+    return 'grid'
+  }
+}
 
 /**
  * Pick one photo (a key) or several (an array of keys, in the order they
- * were picked) from the entries of a library folder. Shift-click selects
- * the range from the previous click.
+ * were picked) from one folder of the library. Shift-click selects the range
+ * from the previous click. `labels` marks photos that are used elsewhere,
+ * such as in another section.
  */
 export default {
   name: 'LibraryPicker',
-  components: { CheckIcon, FolderIcon },
-  props: {
-    files: { type: Array, required: true },
-    prefix: { type: String, default: '' },
-    modelValue: { type: [String, Array], required: true },
-    multiple: { type: Boolean, default: false }
+  components: {
+    CheckIcon,
+    ChevronRightIcon,
+    FolderIcon,
+    HomeIcon,
+    ViewGridIcon,
+    ViewListIcon,
+    LibraryPreview
   },
-  emits: ['update:modelValue', 'open'],
-  data: () => ({ moment, lastClicked: null }),
+  props: {
+    folders: { type: Array, required: true },
+    photos: { type: Array, required: true },
+    prefix: { type: String, default: '' },
+    loading: { type: Boolean, default: false },
+    modelValue: { type: [String, Array], required: true },
+    multiple: { type: Boolean, default: false },
+    labels: { type: Object, default: () => ({}) }
+  },
+  emits: ['update:modelValue', 'open', 'confirm'],
+  data: () => ({
+    VIEWS: [
+      { value: 'grid', label: 'Grid', icon: 'ViewGridIcon' },
+      { value: 'list', label: 'List', icon: 'ViewListIcon' }
+    ],
+    view: storedView(),
+    lastClicked: null
+  }),
   computed: {
-    photos() {
-      return this.files.filter((file) => file.type == 'file')
+    crumbs() {
+      const segments = this.prefix ? this.prefix.split('/') : []
+      return segments.map((name, index) => ({
+        name,
+        path: segments.slice(0, index + 1).join('/')
+      }))
+    },
+    /* Where each selected photo is in the selection, counting from 1. */
+    positions() {
+      return new Map(
+        (this.multiple ? this.modelValue : []).map((key, index) => [
+          key,
+          index + 1
+        ])
+      )
     },
     selectedHere() {
-      return this.photos.filter((file) => this.isSelected(file)).length
+      return this.photos.filter((photo) => this.isSelected(photo)).length
+    },
+    hasLabels() {
+      return this.photos.some((photo) => this.labels[photo.key])
     }
   },
   methods: {
-    isSelected(file) {
-      if (file.type != 'file') return false
-      return this.multiple
-        ? this.modelValue.includes(file.key)
-        : this.modelValue == file.key
+    setView(view) {
+      this.view = view
+      try {
+        localStorage.setItem(VIEW_KEY, view)
+      } catch (e) {
+        /* Without storage the grid is shown next time. */
+      }
     },
-    toggle(file, event) {
-      if (!this.multiple) return this.$emit('update:modelValue', file.key)
+    taken(photo) {
+      return photo.takenAt
+        ? moment(photo.takenAt).format('D MMM YYYY HH:mm:ss')
+        : ''
+    },
+    describe(photo) {
+      return [photo.name, this.taken(photo)].filter(Boolean).join('\n')
+    },
+    isSelected(photo) {
+      return this.multiple
+        ? this.positions.has(photo.key)
+        : this.modelValue == photo.key
+    },
+    toggle(photo, event) {
+      if (!this.multiple) return this.$emit('update:modelValue', photo.key)
 
-      let keys = [file.key]
+      let keys = [photo.key]
       if (event.shiftKey && this.lastClicked) {
         const from = this.photos.findIndex((p) => p.key == this.lastClicked)
-        const to = this.photos.findIndex((p) => p.key == file.key)
+        const to = this.photos.findIndex((p) => p.key == photo.key)
         if (from > -1 && to > -1)
           keys = this.photos
             .slice(Math.min(from, to), Math.max(from, to) + 1)
             .map((p) => p.key)
       }
-      this.lastClicked = file.key
+      this.lastClicked = photo.key
 
-      const select = event.shiftKey || !this.isSelected(file)
+      const select = event.shiftKey || !this.isSelected(photo)
       this.$emit(
         'update:modelValue',
         select
@@ -163,7 +349,7 @@ export default {
       )
     },
     selectAll(select) {
-      const keys = this.photos.map((file) => file.key)
+      const keys = this.photos.map((photo) => photo.key)
       this.$emit(
         'update:modelValue',
         select

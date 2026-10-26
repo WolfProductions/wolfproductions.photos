@@ -22,6 +22,7 @@ const { Folder, Album, Photo, Share, Settings } = require('./models')
 /* Get the photo library (the originals) and the variants made from it. */
 const library = require('./library')
 const variants = require('./variants')
+const previews = require('./previews')
 const tree = require('./tree')
 const shares = require('./shares')
 const { HttpError } = library
@@ -763,6 +764,27 @@ app.get(
     if (typeof folder != 'string') throw new HttpError(400, 'invalid-key')
 
     res.send(await library.listFolder(folder))
+  })
+)
+
+/* A small preview of an original, so the picker can show the photos before they are in an album. */
+app.get(
+  '/api/library/preview',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const key = library.parseKey(req.query.key)
+    const source = library.isImage(key) && (await library.statSource(key))
+    if (!source) throw new HttpError(404, 'not-found')
+
+    /* Asked again every time, which only costs a stat while the file is unchanged. */
+    res.set({
+      'Cache-Control': 'private, no-cache',
+      ETag: `"${source.mtimeMs.toString(36)}-${source.size.toString(36)}"`
+    })
+    if (req.fresh) return res.status(304).end()
+
+    const preview = await previews.previewOf(source)
+    res.type(preview.type).send(preview.data)
   })
 )
 
