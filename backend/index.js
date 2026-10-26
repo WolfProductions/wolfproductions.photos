@@ -858,6 +858,115 @@ app.get(
 )
 
 /**
+ * Processing: how far the variants are, for the admin.
+ */
+
+/* Everything that is still being made or failed, by the album or folder that uses it. */
+app.get(
+  '/api/processing',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const counts = await Photo.aggregate([
+      { $group: { _id: '$status', count: { $sum: 1 } } }
+    ])
+    const total = (status) => counts.find((c) => c._id == status)?.count || 0
+
+    /* A record nothing refers to any more would be counted without a place to show it. */
+    const referenced = await variants.referencedKeys()
+    const open = (
+      await Photo.find({ status: { $in: ['pending', 'error'] } })
+        .select('key status error')
+        .lean()
+    ).filter((photo) => referenced.has(photo.key))
+    const status = variants.queueStatus()
+    const keys = open.map((photo) => photo.key)
+    const byKey = new Map(open.map((photo) => [photo.key, photo]))
+
+    const [albums, folders, settings] = keys.length
+      ? await Promise.all([
+          Album.find({
+            $or: [
+              { cover: { $in: keys } },
+              { 'sections.photos': { $in: keys } }
+            ]
+          })
+            .select('title cover sections')
+            .lean(),
+          Folder.find({
+            $or: [
+              { cover: { $in: keys } },
+              { logo: { $in: keys } },
+              { photos: { $in: keys } }
+            ]
+          })
+            .select('title cover logo photos')
+            .lean(),
+          Settings.findOne().lean()
+        ])
+      : [[], [], null]
+
+    const item = (kind, node, nodeKeys) => {
+      const photos = nodeKeys.map((key) => byKey.get(key)).filter(Boolean)
+      const failed = photos.filter((photo) => photo.status == 'error')
+      return {
+        kind,
+        id: node._id,
+        title: node.title,
+        total: nodeKeys.length,
+        pending: photos.filter((photo) => photo.status == 'pending').length,
+        failed: failed.slice(0, 10).map((photo) => ({
+          name: path.posix.basename(photo.key),
+          error: photo.error
+        })),
+        failedCount: failed.length,
+        busy: nodeKeys.includes(status.current)
+      }
+    }
+    const items = [
+      ...albums.map((album) => item('album', album, albumKeys(album))),
+      ...folders.map((folder) =>
+        item('folder', folder, tree.folderKeys(folder))
+      ),
+      ...(settings?.portfolio
+        ? [
+            item('portfolio', { _id: 'portfolio', title: 'Homepage' }, [
+              ...new Set(
+                [
+                  settings.portfolio.hero,
+                  ...(settings.portfolio.photos || [])
+                ].filter(Boolean)
+              )
+            ])
+          ]
+        : [])
+    ]
+      .filter((item) => item.pending || item.failedCount)
+      .sort((a, b) => b.busy - a.busy || b.pending - a.pending)
+
+    res.send({
+      ...status,
+      current: status.current && path.posix.basename(status.current),
+      ready: total('ready'),
+      pending: open.filter((photo) => photo.status == 'pending').length,
+      failed: open.filter((photo) => photo.status == 'error').length,
+      items
+    })
+  })
+)
+
+/* Look at every photo again, for instance after the photo library was away: what is missing or failed is queued. */
+app.post(
+  '/api/processing/retry',
+  requireAdmin,
+  wrap(async (req, res) => {
+    variants
+      .syncAll()
+      .catch((err) => console.error(`Sync failed: ${err.message}`))
+    res.status(202).send({ started: true })
+  })
+)
+
+/**
  * Share links.
  */
 

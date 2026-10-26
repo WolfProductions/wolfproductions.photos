@@ -30,6 +30,7 @@
     <div v-else class="flex-1" />
 
     <div class="ml-4 flex flex-shrink-0 items-center space-x-3">
+      <ProcessingStatus v-if="session.admin" />
       <slot v-if="session.admin" />
       <button
         type="button"
@@ -51,9 +52,11 @@ import { session, login, logout } from '../../session'
 import { getPhotoUrl } from '../../utils/photos'
 import Logo from '../../assets/dark_text.svg'
 
+import ProcessingStatus from './ProcessingStatus.vue'
+
 export default {
   name: 'TopBar',
-  components: { ChevronRightIcon, LoginIcon, LogoutIcon },
+  components: { ChevronRightIcon, LoginIcon, LogoutIcon, ProcessingStatus },
   props: {
     logo: { type: String, default: '' },
     breadcrumb: { type: Array, default: () => [] },
