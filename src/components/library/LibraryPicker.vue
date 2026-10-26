@@ -70,7 +70,7 @@
 
     <template v-else>
       <div
-        v-if="folders.length"
+        v-if="folders.length && view == 'grid'"
         class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"
       >
         <button
@@ -141,7 +141,7 @@
       </ul>
 
       <table
-        v-else-if="photos.length"
+        v-else-if="view == 'list' && (folders.length || photos.length)"
         class="mt-4 min-w-full divide-y divide-gray-200"
       >
         <thead>
@@ -169,6 +169,32 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
+          <tr
+            v-for="folder in folders"
+            :key="folder.key"
+            class="cursor-pointer select-none hover:bg-gray-50"
+            @click="$emit('open', folder.key)"
+          >
+            <td class="py-1 pr-3">
+              <span
+                class="flex aspect-[3/2] w-16 items-center justify-center rounded bg-gray-50"
+              >
+                <FolderIcon class="h-6 w-6 text-gray-400" />
+              </span>
+            </td>
+            <td
+              :colspan="hasLabels ? 3 : 2"
+              class="whitespace-nowrap py-1 pr-3 text-sm font-medium text-gray-900"
+            >
+              <button
+                type="button"
+                class="rounded hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                @click.stop="$emit('open', folder.key)"
+              >
+                {{ folder.name }}
+              </button>
+            </td>
+          </tr>
           <tr
             v-for="photo in photos"
             :key="photo.key"
