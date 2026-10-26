@@ -1,32 +1,29 @@
 <template>
-  <form @submit.prevent="submit()" class="space-y-8 divide-y divide-gray-200">
-    <div>
-      <h3 class="text-lg font-medium leading-6 text-gray-900">Homepage</h3>
+  <form @submit.prevent="submit()" @keydown.enter="ignoreEnter($event)">
+    <h3 class="text-lg font-medium leading-6 text-gray-900">Homepage</h3>
+    <p class="mt-1 text-sm text-gray-500">
+      What a visitor without a link sees first. The public folders stay
+      reachable under All folders either way.
+    </p>
+
+    <RadioPanel
+      v-model="homepage"
+      label="Show"
+      :options="HOMEPAGES"
+      class="mt-6"
+    />
+
+    <div class="mt-10">
+      <h4 class="text-base font-medium text-gray-900">Portfolio</h4>
       <p class="mt-1 text-sm text-gray-500">
-        What a visitor without a link sees first. The public folders stay
-        reachable under All folders either way.
+        {{
+          homepage == 'portfolio'
+            ? 'This is what the homepage shows.'
+            : 'Not shown now: the homepage shows the public folders. You can prepare it here.'
+        }}
       </p>
 
-      <div class="mt-6 flex flex-col space-y-6">
-        <fieldset>
-          <legend class="block text-sm font-medium text-gray-700">Show</legend>
-          <div class="mt-2 space-y-2">
-            <label
-              v-for="(label, value) in HOMEPAGES"
-              :key="value"
-              class="flex items-center text-sm text-gray-700"
-            >
-              <input
-                v-model="homepage"
-                type="radio"
-                :value="value"
-                class="h-4 w-4 border-gray-300 text-red-600 focus:ring-red-500"
-              />
-              <span class="ml-2">{{ label }}</span>
-            </label>
-          </div>
-        </fieldset>
-
+      <div class="mt-4 space-y-6">
         <div>
           <label
             for="portfolio-title"
@@ -58,13 +55,17 @@
         </div>
 
         <ImageField
-          v-for="field in pickers"
-          :key="field.name"
-          v-model="portfolio[field.name]"
+          v-model="portfolio.hero"
           v-model:prefix="prefix"
-          :multiple="field.name == 'photos'"
-          :label="field.label"
-          :help="field.help"
+          label="Opening photo"
+          help="Shown large at the top, with the title."
+        />
+        <ImageField
+          v-model="portfolio.photos"
+          v-model:prefix="prefix"
+          multiple
+          label="Photos"
+          help="Your selection, in the order you pick them."
         />
 
         <fieldset>
@@ -76,7 +77,7 @@
             anything private. They appear in the order you tick them.
           </p>
           <div
-            class="mt-2 max-h-72 space-y-1 overflow-y-auto rounded-md border border-gray-200 p-3"
+            class="mt-2 max-h-72 space-y-1 overflow-y-auto rounded-md border border-gray-200 bg-white p-3"
           >
             <label
               v-for="item in candidates"
@@ -91,10 +92,20 @@
               />
               <FolderIcon
                 v-if="item.kind == 'folder'"
-                class="ml-2 h-4 w-4 text-gray-400"
+                class="ml-2 h-4 w-4 flex-shrink-0 text-gray-400"
               />
-              <PhotographIcon v-else class="ml-2 h-4 w-4 text-gray-400" />
-              <span class="ml-1.5">{{ item.path }}</span>
+              <PhotographIcon
+                v-else
+                class="ml-2 h-4 w-4 flex-shrink-0 text-gray-400"
+              />
+              <span class="ml-1.5 min-w-0 truncate">{{ item.path }}</span>
+              <span
+                v-if="isFeatured(item)"
+                class="ml-2 flex h-5 min-w-[1.25rem] flex-shrink-0 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white"
+                :title="`Shown as number ${featuredNumber(item)}`"
+              >
+                {{ featuredNumber(item) }}
+              </span>
             </label>
             <p
               v-if="loaded && !candidates.length"
@@ -107,9 +118,11 @@
       </div>
     </div>
 
-    <div class="pt-5">
-      <div class="flex items-center justify-end">
-        <p v-if="error" class="mr-3 text-sm text-red-600">{{ error }}</p>
+    <div
+      class="sticky bottom-0 z-10 -mx-4 mt-8 border-t border-gray-200 bg-white px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"
+    >
+      <div class="flex flex-wrap items-center justify-end gap-3">
+        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
         <router-link
           to="/"
           class="rounded-md border border-gray-300 bg-white py-2 px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
@@ -118,9 +131,9 @@
         <button
           type="submit"
           :disabled="saving"
-          class="ml-3 inline-flex justify-center rounded-md border border-transparent bg-red-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50"
+          class="inline-flex justify-center rounded-md border border-transparent bg-red-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50"
         >
-          Save
+          {{ saving ? 'Saving…' : 'Save' }}
         </button>
       </div>
     </div>
@@ -133,19 +146,30 @@ import api from '../../api'
 import { FolderIcon, PhotographIcon } from '@heroicons/vue/solid'
 
 import ImageField from '../library/ImageField.vue'
+import RadioPanel from '../library/RadioPanel.vue'
 
 export default {
   name: 'PortfolioForm',
   components: {
     FolderIcon,
     PhotographIcon,
-    ImageField
+    ImageField,
+    RadioPanel
   },
   data: () => ({
-    HOMEPAGES: {
-      folders: 'The public folders',
-      portfolio: 'The portfolio'
-    },
+    HOMEPAGES: [
+      {
+        value: 'folders',
+        label: 'The public folders',
+        description: 'The top-level folders that are public, as cards.'
+      },
+      {
+        value: 'portfolio',
+        label: 'The portfolio',
+        description:
+          'A title and intro over the opening photo, then your photos and what you feature.'
+      }
+    ],
     /* The folder of the photo library being browsed, shared by both pickers. */
     prefix: '',
     homepage: 'folders',
@@ -154,20 +178,21 @@ export default {
     loaded: false,
     error: '',
     saving: false,
-    pickers: [
-      {
-        name: 'hero',
-        label: 'Opening photo',
-        help: 'Shown large at the top, with the title.'
-      },
-      {
-        name: 'photos',
-        label: 'Photos',
-        help: 'Your selection, in the order you pick them.'
-      }
-    ]
+    /* Saved: leaving the page is fine. */
+    done: false,
+    /* What was last loaded, to tell whether anything changed. */
+    saved: ''
   }),
+  computed: {
+    dirty() {
+      return JSON.stringify(this.fields()) != this.saved
+    }
+  },
+  created() {
+    this.saved = JSON.stringify(this.fields())
+  },
   async mounted() {
+    window.addEventListener('beforeunload', this.warnBeforeUnload)
     const { homepage, portfolio, candidates } = (
       await api.get('/settings/source')
     ).data
@@ -184,13 +209,40 @@ export default {
     }
     this.candidates = candidates
     this.loaded = true
+    this.saved = JSON.stringify(this.fields())
 
     const first = this.portfolio.hero || this.portfolio.photos[0]
     if (first) this.prefix = first.split('/').slice(0, -1).join('/')
   },
+  beforeUnmount() {
+    window.removeEventListener('beforeunload', this.warnBeforeUnload)
+  },
   methods: {
+    fields() {
+      return { homepage: this.homepage, portfolio: this.portfolio }
+    },
+    /* Whether the page may be left: asked when there are changes that were not saved. */
+    mayLeave() {
+      return (
+        this.done ||
+        !this.dirty ||
+        window.confirm('Leave without saving the changes to the homepage?')
+      )
+    },
+    warnBeforeUnload(event) {
+      if (this.done || !this.dirty) return
+      event.preventDefault()
+      event.returnValue = ''
+    },
+    /* Enter in a field would save the whole homepage. */
+    ignoreEnter(event) {
+      if (event.target.tagName == 'INPUT') event.preventDefault()
+    },
     isFeatured(item) {
       return this.portfolio.featured.some((f) => f.id == item.id)
+    },
+    featuredNumber(item) {
+      return this.portfolio.featured.findIndex((f) => f.id == item.id) + 1
     },
     toggleFeatured(item) {
       this.portfolio.featured = this.isFeatured(item)
@@ -201,10 +253,8 @@ export default {
       this.error = ''
       this.saving = true
       try {
-        await api.put('/settings', {
-          homepage: this.homepage,
-          portfolio: this.portfolio
-        })
+        await api.put('/settings', this.fields())
+        this.done = true
         this.$router.push('/')
       } catch (e) {
         this.error =

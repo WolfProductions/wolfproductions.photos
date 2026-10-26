@@ -34,6 +34,8 @@ export default {
     modelValue: { type: [String, Array], default: '' },
     multiple: { type: Boolean, default: false },
     readonly: { type: Boolean, default: false },
+    /* Also offer vector images (SVG), which only make sense as a logo. */
+    vector: { type: Boolean, default: false },
     labels: { type: Object, default: () => ({}) }
   },
   emits: ['update:modelValue', 'update:prefix', 'confirm', 'loaded'],
@@ -49,7 +51,13 @@ export default {
         const { folders, photos } = await loadLibrary(prefix)
         /* Another folder was opened while this one was loading. */
         if (prefix != this.prefix) return
-        Object.assign(this, { folders, photos, error: '' })
+        Object.assign(this, {
+          folders,
+          photos: this.vector
+            ? photos
+            : photos.filter((p) => !p.key.toLowerCase().endsWith('.svg')),
+          error: ''
+        })
       } catch (e) {
         if (prefix != this.prefix) return
         /* A folder that was renamed or removed on the NAS: start at the top. */

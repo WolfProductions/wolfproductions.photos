@@ -10,6 +10,17 @@ export function inheritedVisibility(parentId, folders) {
   return 'private'
 }
 
+/* The logo a folder below `parentId` takes when it has none: { key, from }, or null for the site's own. */
+export function inheritedLogo(parentId, folders) {
+  const byId = new Map(folders.map((folder) => [folder._id, folder]))
+  let folder = parentId && byId.get(parentId)
+  while (folder) {
+    if (folder.logo) return { key: folder.logo, from: folder.title }
+    folder = folder.parent && byId.get(folder.parent)
+  }
+  return null
+}
+
 /* The id and every folder id below it, which a folder cannot be moved into. */
 export function subtreeIds(id, folders) {
   return new Set([

@@ -3,7 +3,7 @@
     <TopBar current="Homepage" />
     <main class="flex-1 py-8 xl:py-10">
       <div class="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-        <PortfolioForm />
+        <PortfolioForm ref="form" />
       </div>
     </main>
   </div>
@@ -15,6 +15,10 @@ import TopBar from '../components/layout/TopBar.vue'
 
 export default {
   name: 'PortfolioEdit',
-  components: { PortfolioForm, TopBar }
+  components: { PortfolioForm, TopBar },
+  /* Ask before changes that were not saved are lost. */
+  beforeRouteLeave() {
+    return this.$refs.form.mayLeave()
+  }
 }
 </script>

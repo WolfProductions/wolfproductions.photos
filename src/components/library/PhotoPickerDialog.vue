@@ -36,6 +36,7 @@
               <LibraryBrowser
                 v-model="draft"
                 :multiple="multiple"
+                :vector="vector"
                 :prefix="prefix"
                 :labels="labels"
                 @update:prefix="$emit('update:prefix', $event)"
@@ -117,6 +118,8 @@ export default {
     title: { type: String, required: true },
     modelValue: { type: [String, Array], required: true },
     multiple: { type: Boolean, default: false },
+    /* Also offer vector images (SVG). */
+    vector: { type: Boolean, default: false },
     prefix: { type: String, default: '' },
     labels: { type: Object, default: () => ({}) }
   },

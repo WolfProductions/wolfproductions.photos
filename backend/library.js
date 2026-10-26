@@ -16,7 +16,9 @@ const IMAGE_EXTENSIONS = [
   '.webp',
   '.tif',
   '.tiff',
-  '.avif'
+  '.avif',
+  /* Logos; the forms only offer them for the logo. */
+  '.svg'
 ]
 
 /* An error that is sent to the client as { error: code } with this status. */

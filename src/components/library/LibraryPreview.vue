@@ -1,11 +1,15 @@
 <template>
-  <span ref="box" class="block overflow-hidden bg-gray-100">
+  <span ref="box" :class="['block overflow-hidden', !logo && 'bg-gray-100']">
     <img
       v-if="url"
       :src="url"
       alt=""
       draggable="false"
-      :class="['h-full w-full', cover ? 'object-cover' : 'object-contain']"
+      :class="[
+        'h-full w-full',
+        cover ? 'object-cover' : 'object-contain',
+        logo && 'object-left'
+      ]"
     />
     <span
       v-else-if="failed"
@@ -31,7 +35,9 @@ export default {
   props: {
     photoKey: { type: String, required: true },
     /* Fill the box, cropping the photo, instead of showing all of it. */
-    cover: { type: Boolean, default: false }
+    cover: { type: Boolean, default: false },
+    /* Shown as in the top bar: at the left, on no background. */
+    logo: { type: Boolean, default: false }
   },
   data: () => ({ url: '', failed: false, requested: '' }),
   mounted() {
