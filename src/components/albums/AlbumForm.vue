@@ -343,6 +343,9 @@ export default {
       return JSON.stringify(this.fields()) != this.saved
     }
   },
+  created() {
+    this.saved = JSON.stringify(this.fields())
+  },
   async mounted() {
     api.get('/folders').then((response) => (this.folders = response.data))
     window.addEventListener('beforeunload', this.warnBeforeUnload)

@@ -7,6 +7,7 @@
  * the start of the file, which is quick over the NAS share; a photo without
  * one is read whole and resized.
  */
+const fs = require('fs')
 const exifr = require('exifr')
 const { HttpError } = require('./library')
 
@@ -101,6 +102,12 @@ async function resizedPreview(source) {
 }
 
 async function make(source) {
+  /* A vector image is its own preview; it is only ever shown with <img>, where it runs no scripts. */
+  if (source.abs.toLowerCase().endsWith('.svg'))
+    return {
+      data: await fs.promises.readFile(source.abs),
+      type: 'image/svg+xml'
+    }
   try {
     /* A damaged EXIF preview is no reason to give up on the photo. */
     const embedded = await embeddedPreview(source).catch(() => null)

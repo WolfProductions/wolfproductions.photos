@@ -73,6 +73,9 @@ async function viewerOf(req) {
   return { admin, shares: admin ? [] : await shares.sharesOf(req) }
 }
 
+/* For images that are SVG: styles, but no scripts or anything else. */
+const SVG_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+
 function objectId(id) {
   if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'not-found')
   return id
@@ -338,6 +341,8 @@ app.get(
           parent: folder.parent,
           ancestors: folder.ancestors,
           visibility: folder.visibility,
+          /* A key: this route is the admin's, for the forms. */
+          logo: folder.logo || '',
           path: pathOf(folder)
         }))
         .sort((a, b) => a.path.localeCompare(b.path, 'nl'))
@@ -803,6 +808,7 @@ app.get(
     if (req.fresh) return res.status(304).end()
 
     const preview = await previews.previewOf(source)
+    res.set('Content-Security-Policy', SVG_POLICY)
     res.type(preview.type).send(preview.data)
   })
 )
@@ -1011,7 +1017,10 @@ app.use(
     maxAge: '1d',
     index: false,
     redirect: false,
-    fallthrough: false
+    fallthrough: false,
+    /* A vector image opened on its own must not run scripts on this site. */
+    setHeaders: (res, file) =>
+      file.endsWith('.svg') && res.set('Content-Security-Policy', SVG_POLICY)
   })
 )
 
