@@ -65,34 +65,12 @@
             :inherited="inheritedVisibility"
           />
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700">
-              Cover
-            </label>
-            <div class="mt-1 w-full">
-              <Disclosure v-slot="{ open }">
-                <DisclosureButton
-                  class="flex w-full justify-between rounded-lg bg-red-100 px-4 py-2 text-left text-sm font-medium text-red-900 hover:bg-red-200 focus:outline-none focus-visible:ring focus-visible:ring-red-500 focus-visible:ring-opacity-75"
-                >
-                  <span class="truncate">{{
-                    album.cover || 'Cover picture'
-                  }}</span>
-                  <ChevronUpIcon
-                    :class="open ? 'rotate-180 transform' : ''"
-                    class="h-5 w-5 flex-shrink-0 text-red-500"
-                  />
-                </DisclosureButton>
-                <DisclosurePanel class="px-4 py-4">
-                  <LibraryPicker
-                    v-model="album.cover"
-                    :files="files"
-                    :prefix="prefix"
-                    @open="prefix = $event"
-                  />
-                </DisclosurePanel>
-              </Disclosure>
-            </div>
-          </div>
+          <ImageField
+            v-model="album.cover"
+            v-model:prefix="prefix"
+            label="Cover"
+            help="Shown at the top of the album and on its card."
+          />
 
           <div>
             <label class="block text-sm font-medium text-gray-700">
@@ -139,20 +117,14 @@
                     </div>
                   </div>
 
-                  <div class="mt-4">
-                    <label class="block text-sm font-medium text-gray-700">
-                      Section photos
-                    </label>
-                    <div class="mt-1">
-                      <LibraryPicker
-                        v-model="section.photos"
-                        multiple
-                        :files="files"
-                        :prefix="prefix"
-                        @open="prefix = $event"
-                      />
-                    </div>
-                  </div>
+                  <ImageField
+                    v-model="section.photos"
+                    v-model:prefix="prefix"
+                    multiple
+                    class="mt-4"
+                    :label="`Photos of ${section.title || 'this section'}`"
+                    :labels="labelsFor(index)"
+                  />
                 </DisclosurePanel>
               </Disclosure>
             </div>
@@ -201,13 +173,12 @@
 import api from '../../api'
 import moment from 'moment'
 import { inheritedVisibility } from '../../utils/folders'
-import { loadLibrary, libraryError } from '../../utils/library'
 
 import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/vue'
 import { ChevronUpIcon, TrashIcon } from '@heroicons/vue/solid'
 
 import FolderSelect from '../library/FolderSelect.vue'
-import LibraryPicker from '../library/LibraryPicker.vue'
+import ImageField from '../library/ImageField.vue'
 import VisibilitySelect from '../library/VisibilitySelect.vue'
 
 export default {
@@ -219,13 +190,12 @@ export default {
     ChevronUpIcon,
     TrashIcon,
     FolderSelect,
-    LibraryPicker,
+    ImageField,
     VisibilitySelect
   },
   emits: ['loaded'],
   data() {
     return {
-      files: [],
       /* The folder of the photo library being browsed, shared by every picker. */
       prefix: '',
       folders: [],
@@ -259,7 +229,6 @@ export default {
     }
   },
   async mounted() {
-    this.updateFiles()
     api.get('/folders').then((response) => (this.folders = response.data))
 
     if (this.albumId) {
@@ -285,17 +254,15 @@ export default {
     removeSection(index) {
       this.album.sections.splice(index, 1)
     },
-    async updateFiles() {
-      const prefix = this.prefix
-      try {
-        const files = await loadLibrary(prefix)
-        // Another folder was opened while this one was loading
-        if (prefix != this.prefix) return
-        this.files = files
-        this.error = ''
-      } catch (e) {
-        this.error = libraryError(e)
-      }
+    /* The photos of a section that are also in another one, with the title of that one. */
+    labelsFor(index) {
+      const labels = {}
+      this.album.sections.forEach((section, other) => {
+        if (other == index) return
+        for (const key of section.photos)
+          if (!labels[key]) labels[key] = section.title || 'another section'
+      })
+      return labels
     },
     async submit() {
       if (!this.album.folder) return (this.error = 'Choose a folder.')
@@ -344,11 +311,6 @@ export default {
       } catch (e) {
         this.error = 'The album could not be deleted.'
       }
-    }
-  },
-  watch: {
-    prefix() {
-      this.updateFiles()
     }
   }
 }

@@ -29,6 +29,10 @@ class HttpError extends Error {
   }
 }
 
+/* Whether a key or file name is one of the photos the picker shows. */
+const isImage = (name) =>
+  IMAGE_EXTENSIONS.includes(path.posix.extname(name).toLowerCase())
+
 /* Dotfiles, Synology's @eaDir and #recycle. */
 const isHidden = (name) => /^[.@#]/.test(name)
 
@@ -167,9 +171,7 @@ async function listFolder(folder) {
     .sort(compareNames)
 
   const images = entries.filter(
-    (entry) =>
-      entry.isFile() &&
-      IMAGE_EXTENSIONS.includes(path.extname(entry.name).toLowerCase())
+    (entry) => entry.isFile() && isImage(entry.name)
   )
   const files = await mapLimit(images, 8, async (entry) => ({
     name: entry.name,
@@ -192,6 +194,7 @@ async function listFolder(folder) {
 module.exports = {
   HttpError,
   parseKey,
+  isImage,
   libraryRoot,
   isAvailable,
   statSource,

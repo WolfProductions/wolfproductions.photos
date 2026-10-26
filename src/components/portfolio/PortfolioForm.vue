@@ -57,34 +57,15 @@
           />
         </div>
 
-        <div v-for="field in pickers" :key="field.name">
-          <label class="block text-sm font-medium text-gray-700">
-            {{ field.label }}
-          </label>
-          <p class="text-xs text-gray-500">{{ field.help }}</p>
-          <div class="mt-1 w-full">
-            <Disclosure v-slot="{ open }">
-              <DisclosureButton
-                class="flex w-full justify-between rounded-lg bg-red-100 px-4 py-2 text-left text-sm font-medium text-red-900 hover:bg-red-200 focus:outline-none focus-visible:ring focus-visible:ring-red-500 focus-visible:ring-opacity-75"
-              >
-                <span class="truncate">{{ summary(field) }}</span>
-                <ChevronUpIcon
-                  :class="open ? 'rotate-180 transform' : ''"
-                  class="h-5 w-5 flex-shrink-0 text-red-500"
-                />
-              </DisclosureButton>
-              <DisclosurePanel class="px-4 py-4">
-                <LibraryPicker
-                  v-model="portfolio[field.name]"
-                  :multiple="field.name == 'photos'"
-                  :files="files"
-                  :prefix="prefix"
-                  @open="prefix = $event"
-                />
-              </DisclosurePanel>
-            </Disclosure>
-          </div>
-        </div>
+        <ImageField
+          v-for="field in pickers"
+          :key="field.name"
+          v-model="portfolio[field.name]"
+          v-model:prefix="prefix"
+          :multiple="field.name == 'photos'"
+          :label="field.label"
+          :help="field.help"
+        />
 
         <fieldset>
           <legend class="block text-sm font-medium text-gray-700">
@@ -148,30 +129,23 @@
 
 <script>
 import api from '../../api'
-import { loadLibrary, libraryError } from '../../utils/library'
 
-import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/vue'
-import { ChevronUpIcon, FolderIcon, PhotographIcon } from '@heroicons/vue/solid'
+import { FolderIcon, PhotographIcon } from '@heroicons/vue/solid'
 
-import LibraryPicker from '../library/LibraryPicker.vue'
+import ImageField from '../library/ImageField.vue'
 
 export default {
   name: 'PortfolioForm',
   components: {
-    Disclosure,
-    DisclosureButton,
-    DisclosurePanel,
-    ChevronUpIcon,
     FolderIcon,
     PhotographIcon,
-    LibraryPicker
+    ImageField
   },
   data: () => ({
     HOMEPAGES: {
       folders: 'The public folders',
       portfolio: 'The portfolio'
     },
-    files: [],
     /* The folder of the photo library being browsed, shared by both pickers. */
     prefix: '',
     homepage: 'folders',
@@ -194,7 +168,6 @@ export default {
     ]
   }),
   async mounted() {
-    this.updateFiles()
     const { homepage, portfolio, candidates } = (
       await api.get('/settings/source')
     ).data
@@ -216,12 +189,6 @@ export default {
     if (first) this.prefix = first.split('/').slice(0, -1).join('/')
   },
   methods: {
-    summary(field) {
-      const value = this.portfolio[field.name]
-      if (Array.isArray(value))
-        return value.length ? `${value.length} photos` : 'No photos'
-      return value || 'None'
-    },
     isFeatured(item) {
       return this.portfolio.featured.some((f) => f.id == item.id)
     },
@@ -229,17 +196,6 @@ export default {
       this.portfolio.featured = this.isFeatured(item)
         ? this.portfolio.featured.filter((f) => f.id != item.id)
         : [...this.portfolio.featured, { kind: item.kind, id: item.id }]
-    },
-    async updateFiles() {
-      const prefix = this.prefix
-      try {
-        const files = await loadLibrary(prefix)
-        if (prefix != this.prefix) return
-        this.files = files
-        this.error = ''
-      } catch (e) {
-        this.error = libraryError(e)
-      }
     },
     async submit() {
       this.error = ''
@@ -260,11 +216,6 @@ export default {
       } finally {
         this.saving = false
       }
-    }
-  },
-  watch: {
-    prefix() {
-      this.updateFiles()
     }
   }
 }

@@ -80,34 +80,15 @@
           </select>
         </div>
 
-        <div v-for="field in pickers" :key="field.name">
-          <label class="block text-sm font-medium text-gray-700">
-            {{ field.label }}
-          </label>
-          <p class="text-xs text-gray-500">{{ field.help }}</p>
-          <div class="mt-1 w-full">
-            <Disclosure v-slot="{ open }">
-              <DisclosureButton
-                class="flex w-full justify-between rounded-lg bg-red-100 px-4 py-2 text-left text-sm font-medium text-red-900 hover:bg-red-200 focus:outline-none focus-visible:ring focus-visible:ring-red-500 focus-visible:ring-opacity-75"
-              >
-                <span class="truncate">{{ summary(field) }}</span>
-                <ChevronUpIcon
-                  :class="open ? 'rotate-180 transform' : ''"
-                  class="h-5 w-5 flex-shrink-0 text-red-500"
-                />
-              </DisclosureButton>
-              <DisclosurePanel class="px-4 py-4">
-                <LibraryPicker
-                  v-model="folder[field.name]"
-                  :multiple="field.name == 'photos'"
-                  :files="files"
-                  :prefix="prefix"
-                  @open="prefix = $event"
-                />
-              </DisclosurePanel>
-            </Disclosure>
-          </div>
-        </div>
+        <ImageField
+          v-for="field in pickers"
+          :key="field.name"
+          v-model="folder[field.name]"
+          v-model:prefix="prefix"
+          :multiple="field.name == 'photos'"
+          :label="field.label"
+          :help="field.help"
+        />
       </div>
     </div>
 
@@ -142,30 +123,21 @@
 <script>
 import api from '../../api'
 import { inheritedVisibility, subtreeIds } from '../../utils/folders'
-import { loadLibrary, libraryError } from '../../utils/library'
-
-import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/vue'
-import { ChevronUpIcon } from '@heroicons/vue/solid'
 
 import FolderSelect from '../library/FolderSelect.vue'
-import LibraryPicker from '../library/LibraryPicker.vue'
+import ImageField from '../library/ImageField.vue'
 import VisibilitySelect from '../library/VisibilitySelect.vue'
 
 export default {
   name: 'FolderForm',
   components: {
-    Disclosure,
-    DisclosureButton,
-    DisclosurePanel,
-    ChevronUpIcon,
     FolderSelect,
-    LibraryPicker,
+    ImageField,
     VisibilitySelect
   },
   emits: ['loaded'],
   data() {
     return {
-      files: [],
       /* The folder of the photo library being browsed, shared by every picker. */
       prefix: '',
       folders: [],
@@ -223,7 +195,6 @@ export default {
     }
   },
   async mounted() {
-    this.updateFiles()
     api.get('/folders').then((response) => (this.folders = response.data))
 
     if (this.folderId) {
@@ -246,23 +217,6 @@ export default {
     this.$emit('loaded', this.folder)
   },
   methods: {
-    summary(field) {
-      const value = this.folder[field.name]
-      if (Array.isArray(value))
-        return value.length ? `${value.length} photos` : 'No photos'
-      return value || 'None'
-    },
-    async updateFiles() {
-      const prefix = this.prefix
-      try {
-        const files = await loadLibrary(prefix)
-        if (prefix != this.prefix) return
-        this.files = files
-        this.error = ''
-      } catch (e) {
-        this.error = libraryError(e)
-      }
-    },
     async submit() {
       this.error = ''
       this.saving = true
@@ -293,11 +247,6 @@ export default {
             ? 'Only an empty folder can be deleted. Move or delete what is inside first.'
             : 'The folder could not be deleted.'
       }
-    }
-  },
-  watch: {
-    prefix() {
-      this.updateFiles()
     }
   }
 }
