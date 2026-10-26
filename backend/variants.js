@@ -224,6 +224,9 @@ const retries = new Map()
 let running = false
 let waiting = 0
 let idleCallbacks = []
+/* The key being processed, and how long the last photos took to make, in ms. */
+let current = null
+const durations = []
 
 function enqueue(keys, front) {
   const fresh = keys.filter((key) => !queued.has(key))
@@ -239,14 +242,28 @@ async function run() {
   while (queue.length) {
     const key = queue.shift()
     queued.delete(key)
+    current = key
     try {
       await processKey(key)
     } catch (err) {
       console.error(`Variants of ${key} failed: ${err.message}`)
     }
+    current = null
   }
   running = false
   settle()
+}
+
+/* What the queue is doing: how many keys are left, which one is being made, and how long one takes. */
+function queueStatus() {
+  return {
+    queued: queue.length + (current ? 1 : 0),
+    retrying: waiting,
+    current,
+    msPerPhoto: durations.length
+      ? Math.round(durations.reduce((a, b) => a + b) / durations.length)
+      : null
+  }
 }
 
 function retryLater(key) {
@@ -310,7 +327,10 @@ async function processKey(key) {
 
   const version = { sourceMtimeMs: source.mtimeMs, sourceSize: source.size }
   try {
+    const started = Date.now()
     const dimensions = await generate(photo, source, variants)
+    durations.push(Date.now() - started)
+    if (durations.length > 20) durations.shift()
 
     /* The original changed while it was being read. */
     const after = await library.statSource(key)
@@ -458,6 +478,8 @@ module.exports = {
   syncAll,
   pruneUnreferenced,
   lookup,
+  queueStatus,
+  referencedKeys,
   refOf,
   variantPath,
   idle
