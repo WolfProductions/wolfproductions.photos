@@ -60,6 +60,7 @@
         <VisibilitySelect
           v-model="folder.visibility"
           :inherited="inheritedVisibility"
+          :top-level="!folder.parent"
         />
 
         <div>
