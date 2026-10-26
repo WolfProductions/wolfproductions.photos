@@ -58,15 +58,60 @@
           v-model="portfolio.hero"
           v-model:prefix="prefix"
           label="Opening photo"
-          help="Shown large at the top, with the title."
+          help="Shown large at the top, with the title. Click the star on a photo below, or choose any photo from the library."
         />
-        <ImageField
-          v-model="portfolio.photos"
-          v-model:prefix="prefix"
-          multiple
-          label="Photos"
-          help="Your selection, in the order you pick them."
-        />
+
+        <div>
+          <span class="block text-sm font-medium text-gray-700">Photos</span>
+          <p class="text-xs text-gray-500">
+            Shown in this order. Drag a photo, or use its arrows, to move it.
+          </p>
+          <div class="mt-2">
+            <OrderedPhotos
+              v-if="portfolio.photos.length"
+              v-model:photos="portfolio.photos"
+              :cover="portfolio.hero"
+              star-title="Use as the opening photo"
+              starred-title="The opening photo"
+              @cover="portfolio.hero = $event"
+            />
+            <button
+              v-else
+              type="button"
+              class="flex h-20 w-full items-center justify-center rounded-md border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-gray-400"
+              @click="picking = true"
+            >
+              <PhotographIcon class="mr-2 h-5 w-5 text-gray-400" />
+              No photos yet
+            </button>
+          </div>
+          <div class="mt-2 flex items-center text-sm">
+            <span class="text-gray-500">
+              {{ portfolio.photos.length }}
+              {{ portfolio.photos.length == 1 ? 'photo' : 'photos' }}
+            </span>
+            <button
+              type="button"
+              class="ml-4 font-medium text-red-600 hover:text-red-500"
+              @click="picking = true"
+            >
+              {{
+                portfolio.photos.length
+                  ? 'Add or take out photos…'
+                  : 'Choose photos…'
+              }}
+            </button>
+          </div>
+          <PhotoPickerDialog
+            :open="picking"
+            title="Photos of the homepage"
+            :model-value="portfolio.photos"
+            multiple
+            v-model:prefix="prefix"
+            @update:model-value="portfolio.photos = $event"
+            @close="picking = false"
+          />
+        </div>
 
         <fieldset>
           <legend class="block text-sm font-medium text-gray-700">
@@ -146,6 +191,8 @@ import api from '../../api'
 import { FolderIcon, PhotographIcon } from '@heroicons/vue/solid'
 
 import ImageField from '../library/ImageField.vue'
+import OrderedPhotos from '../library/OrderedPhotos.vue'
+import PhotoPickerDialog from '../library/PhotoPickerDialog.vue'
 import RadioPanel from '../library/RadioPanel.vue'
 
 export default {
@@ -154,6 +201,8 @@ export default {
     FolderIcon,
     PhotographIcon,
     ImageField,
+    OrderedPhotos,
+    PhotoPickerDialog,
     RadioPanel
   },
   data: () => ({
@@ -172,6 +221,8 @@ export default {
     ],
     /* The folder of the photo library being browsed, shared by both pickers. */
     prefix: '',
+    /* Whether the photos are being chosen. */
+    picking: false,
     homepage: 'folders',
     portfolio: { title: '', intro: '', hero: '', photos: [], featured: [] },
     candidates: [],

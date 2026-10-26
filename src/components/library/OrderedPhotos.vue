@@ -23,7 +23,7 @@
       <span
         v-if="key == cover"
         class="absolute top-1 left-1 rounded-full bg-red-600 p-1 text-white shadow"
-        title="The cover of the album"
+        :title="starredTitle"
       >
         <StarIcon class="h-3 w-3" />
       </span>
@@ -35,11 +35,11 @@
             v-if="key != cover"
             type="button"
             :class="BUTTON"
-            title="Use as the cover"
+            :title="starTitle"
             @click="$emit('cover', key)"
           >
             <StarOutlineIcon class="h-4 w-4" />
-            <span class="sr-only">Use as the cover</span>
+            <span class="sr-only">{{ starTitle }}</span>
           </button>
           <span v-else />
           <button
@@ -97,17 +97,18 @@ import {
 } from '@heroicons/vue/solid'
 import { StarIcon as StarOutlineIcon } from '@heroicons/vue/outline'
 
-import LibraryPreview from '../library/LibraryPreview.vue'
+import LibraryPreview from './LibraryPreview.vue'
 
 /* How many photos a long section shows until it is opened up. */
 const SHOWN = 23
 
 /**
- * The photos of a section, in the order of the gallery: drag them, or use
- * the arrows, to change it. The star makes a photo the cover of the album.
+ * Photos in the order they are shown, such as those of a section: drag
+ * them, or use the arrows, to change it. The star makes a photo the cover
+ * (of an album, or the opening photo of the homepage).
  */
 export default {
-  name: 'SectionPhotos',
+  name: 'OrderedPhotos',
   components: {
     ChevronLeftIcon,
     ChevronRightIcon,
@@ -118,7 +119,10 @@ export default {
   },
   props: {
     photos: { type: Array, required: true },
-    cover: { type: String, default: '' }
+    /* The photo that has the star. */
+    cover: { type: String, default: '' },
+    starTitle: { type: String, default: 'Use as the cover' },
+    starredTitle: { type: String, default: 'The cover of the album' }
   },
   emits: ['update:photos', 'cover'],
   data: () => ({
