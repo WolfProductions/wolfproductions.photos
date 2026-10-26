@@ -75,6 +75,9 @@
           <option value="title">By title</option>
           <option value="manual">Manual</option>
         </select>
+        <p v-if="folder.sort == 'manual'" class="mt-1 text-xs text-gray-500">
+          Set it with Change order on the page of the folder.
+        </p>
       </div>
 
       <VisibilitySelect
