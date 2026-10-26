@@ -30,7 +30,7 @@ There are no tests and no linter in either package.
 
 ## Things that will bite you
 
-- **`backend/.env` holds the production database credentials.** Without a `.env.local` that overrides `MONGODB_DATABASE`, a locally started backend reads and writes live data.
+- **`backend/.env` holds the credentials of MongoDB Atlas.** Production has not used Atlas since 2026-10-26 (see Deployment), but Atlas still holds older databases, among them the copy of production made at the move. Without a `.env.local` that overrides `MONGODB_DATABASE`, a locally started backend reads and writes whichever one `.env` names.
 - **Admin routes need the token.** `GET /api/library` (and its previews), `GET /api/folders` and every POST/PUT/DELETE require `Authorization: Bearer <ADMIN_TOKEN>`. The frontend keeps it in `localStorage` (`adminToken`) and sends it on every request; it is entered with the log-in icon in the top bar, or asked for with a `window.prompt` on a 401. The `new` and `edit` pages themselves are reachable by anyone; they just cannot browse or save.
 - **Visitors only see what is public, or what a share link points at.** Read routes check `tree.canView`: without the token or a covering share link, a private folder or album answers 404 and is left out of lists. After `migrate-folders.js` everything is private, so the site looks empty to visitors until folders are made public or shared. `/media` checks nothing: it is protected only by the random publicIds, so a variant URL someone already has keeps working after their link is revoked.
 - **Read routes never return keys.** Images in responses are refs (`publicId`, plus `.svg` for vector images), `photoMeta` is keyed by ref, and the forms read keys from the admin-only `/source` routes. Never PUT a read response back; it would store refs as keys.
@@ -95,7 +95,7 @@ Gallery state (`src/components/gallery/`):
 
 ### Deployment
 
-Production runs this version at home: one Node process in a Proxmox LXC container with the NAS share mounted read-only as `PHOTOS_ROOT` and the variants on the container's own disk, so galleries keep working while the NAS is off (only browsing and downloading originals need it).
+Production runs this version at home: one Node process in a Proxmox LXC container with the NAS share mounted read-only as `PHOTOS_ROOT` and the variants on the container's own disk, so galleries keep working while the NAS is off (only browsing and downloading originals need it). The database is MongoDB 8.0 in the same container, on `127.0.0.1` only (the container's `backend/.env.local` sets `MONGODB_URI`; `wolfphotos.service` starts after `mongod`). `wolfphotos-backup.timer` dumps it every night to `/var/backups/wolfphotos` on the container's disk and keeps 14; restore one with `mongorestore --archive=<file> --gzip`.
 
 ## Conventions
 
