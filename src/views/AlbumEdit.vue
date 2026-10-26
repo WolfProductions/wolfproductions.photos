@@ -4,6 +4,7 @@
     <main class="flex-1 py-8 xl:py-10">
       <div class="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
         <AlbumForm
+          ref="form"
           :key="$route.fullPath"
           @loaded="title = $event.title || 'New album'"
         />
@@ -19,6 +20,13 @@ import TopBar from '../components/layout/TopBar.vue'
 export default {
   name: 'AlbumEdit',
   components: { AlbumForm, TopBar },
-  data: () => ({ title: '' })
+  data: () => ({ title: '' }),
+  /* Ask before changes that were not saved are lost. */
+  beforeRouteLeave() {
+    return this.$refs.form.mayLeave()
+  },
+  beforeRouteUpdate() {
+    return this.$refs.form.mayLeave()
+  }
 }
 </script>

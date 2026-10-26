@@ -19,6 +19,40 @@ export async function loadLibrary(prefix) {
   }
 }
 
+/* When the photos of the given keys were taken: { [key]: 'YYYY-MM-DDTHH:mm:ss' or null }. */
+export async function loadDates(keys) {
+  return (await api.post('/library/dates', { keys })).data.dates
+}
+
+/* Keys in the order the library shows them: on when they were taken, then on name. */
+export function sortByTaken(keys, dates) {
+  const name = (key) => key.split('/').pop()
+  return [...keys].sort(
+    (a, b) =>
+      (dates[a] || '').localeCompare(dates[b] || '') ||
+      name(a).localeCompare(name(b), undefined, { numeric: true })
+  )
+}
+
+/* Where the last album was started from, so the next one opens next to it. */
+const START_KEY = 'albumStartFolder'
+
+export function lastStartFolder() {
+  try {
+    return localStorage.getItem(START_KEY) || ''
+  } catch (e) {
+    return ''
+  }
+}
+
+export function rememberStartFolder(folder) {
+  try {
+    localStorage.setItem(START_KEY, folder)
+  } catch (e) {
+    /* Without storage the next album starts at the top. */
+  }
+}
+
 export function libraryError(e) {
   return e.response?.status == 401
     ? 'The admin token is needed to browse the photos.'

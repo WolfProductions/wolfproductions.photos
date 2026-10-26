@@ -33,16 +33,13 @@
             </div>
 
             <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-              <p v-if="error" class="mb-4 text-sm text-red-600">{{ error }}</p>
-              <LibraryPicker
+              <LibraryBrowser
                 v-model="draft"
                 :multiple="multiple"
-                :folders="folders"
-                :photos="photos"
                 :prefix="prefix"
-                :loading="loading"
                 :labels="labels"
-                @open="$emit('update:prefix', $event)"
+                @update:prefix="$emit('update:prefix', $event)"
+                @loaded="here = $event.photos.map((photo) => photo.key)"
                 @confirm="done()"
               />
             </div>
@@ -90,8 +87,6 @@
 </template>
 
 <script>
-import { loadLibrary, libraryError } from '../../utils/library'
-
 import {
   Dialog,
   DialogPanel,
@@ -100,7 +95,7 @@ import {
 } from '@headlessui/vue'
 import { XIcon } from '@heroicons/vue/solid'
 
-import LibraryPicker from './LibraryPicker.vue'
+import LibraryBrowser from './LibraryBrowser.vue'
 
 /**
  * Choose photos from the library in a dialog. The choice is only passed on
@@ -115,7 +110,7 @@ export default {
     DialogTitle,
     TransitionRoot,
     XIcon,
-    LibraryPicker
+    LibraryBrowser
   },
   props: {
     open: { type: Boolean, default: false },
@@ -126,41 +121,17 @@ export default {
     labels: { type: Object, default: () => ({}) }
   },
   emits: ['close', 'update:modelValue', 'update:prefix'],
-  data: () => ({
-    draft: '',
-    folders: [],
-    photos: [],
-    loading: false,
-    error: ''
-  }),
+  /* `here`: the keys of the photos in the folder being browsed. */
+  data: () => ({ draft: '', here: [] }),
   computed: {
     /* Selected photos that are not in the folder being browsed. */
     elsewhere() {
       if (!this.multiple) return 0
-      const here = new Set(this.photos.map((photo) => photo.key))
+      const here = new Set(this.here)
       return this.draft.filter((key) => !here.has(key)).length
     }
   },
   methods: {
-    async load() {
-      const prefix = this.prefix
-      this.loading = true
-      try {
-        const { folders, photos } = await loadLibrary(prefix)
-        /* Another folder was opened while this one was loading. */
-        if (prefix != this.prefix) return
-        Object.assign(this, { folders, photos, error: '' })
-      } catch (e) {
-        if (prefix != this.prefix) return
-        /* A folder that was renamed or removed on the NAS: start at the top. */
-        if (e.response?.status == 404 && prefix)
-          return this.$emit('update:prefix', '')
-        Object.assign(this, { folders: [], photos: [] })
-        this.error = libraryError(e)
-      } finally {
-        if (prefix == this.prefix) this.loading = false
-      }
-    },
     done() {
       this.$emit('update:modelValue', this.draft)
       this.$emit('close')
@@ -176,13 +147,9 @@ export default {
         /* One chosen photo opens at its own folder. */
         if (!this.multiple && this.modelValue) {
           const folder = this.modelValue.split('/').slice(0, -1).join('/')
-          if (folder != this.prefix) return this.$emit('update:prefix', folder)
+          if (folder != this.prefix) this.$emit('update:prefix', folder)
         }
-        this.load()
       }
-    },
-    prefix() {
-      if (this.open) this.load()
     }
   }
 }

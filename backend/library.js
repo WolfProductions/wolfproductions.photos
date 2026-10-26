@@ -142,6 +142,12 @@ async function readTakenAt(abs) {
   }
 }
 
+/* When the photo of a key was taken, or null when that is not known. */
+async function takenAtOf(key) {
+  const source = await statSource(key)
+  return source ? readTakenAt(source.abs) : null
+}
+
 /* List the subfolders and photos of one folder of the library. */
 async function listFolder(folder) {
   const segments = folder == '' ? [] : parseKey(folder).split('/')
@@ -198,6 +204,7 @@ module.exports = {
   libraryRoot,
   isAvailable,
   statSource,
+  takenAtOf,
   listFolder,
   mapLimit
 }
