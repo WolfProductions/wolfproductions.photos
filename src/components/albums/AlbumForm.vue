@@ -157,7 +157,7 @@
           </div>
 
           <div class="p-3 sm:p-4">
-            <SectionPhotos
+            <OrderedPhotos
               v-if="section.photos.length"
               v-model:photos="section.photos"
               :cover="album.cover"
@@ -264,9 +264,9 @@ import {
 import { PhotographIcon } from '@heroicons/vue/outline'
 
 import AlbumStart from './AlbumStart.vue'
-import SectionPhotos from './SectionPhotos.vue'
 import FolderSelect from '../library/FolderSelect.vue'
 import ImageField from '../library/ImageField.vue'
+import OrderedPhotos from '../library/OrderedPhotos.vue'
 import PhotoPickerDialog from '../library/PhotoPickerDialog.vue'
 import VisibilitySelect from '../library/VisibilitySelect.vue'
 
@@ -286,9 +286,9 @@ export default {
     TrashIcon,
     PhotographIcon,
     AlbumStart,
-    SectionPhotos,
     FolderSelect,
     ImageField,
+    OrderedPhotos,
     PhotoPickerDialog,
     VisibilitySelect
   },
