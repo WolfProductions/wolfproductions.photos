@@ -32,7 +32,7 @@
       </nav>
 
       <label
-        v-if="multiple && photos.length"
+        v-if="multiple && !readonly && photos.length"
         class="flex items-center text-sm text-gray-700"
       >
         <input
@@ -93,7 +93,8 @@
         <li v-for="photo in photos" :key="photo.key">
           <button
             type="button"
-            class="group relative block w-full select-none rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+            class="group relative block w-full select-none rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-default"
+            :disabled="readonly"
             :aria-pressed="isSelected(photo)"
             :title="describe(photo)"
             @click="toggle(photo, $event)"
@@ -105,7 +106,7 @@
                 'aspect-[3/2] w-full rounded-md transition',
                 isSelected(photo)
                   ? 'ring-2 ring-red-600 ring-offset-2'
-                  : 'group-hover:opacity-80'
+                  : !readonly && 'group-hover:opacity-80'
               ]"
             />
             <span
@@ -118,7 +119,7 @@
               <CheckIcon v-else class="h-4 w-4" />
             </span>
             <span
-              v-else
+              v-else-if="!readonly"
               class="absolute top-1.5 left-1.5 h-6 w-6 rounded-full border-2 border-white bg-black bg-opacity-20 opacity-0 shadow group-hover:opacity-100"
             />
             <span
@@ -172,8 +173,9 @@
             v-for="photo in photos"
             :key="photo.key"
             :class="[
-              'cursor-pointer select-none',
-              isSelected(photo) ? 'bg-red-50' : 'hover:bg-gray-50'
+              'select-none',
+              !readonly && 'cursor-pointer',
+              isSelected(photo) ? 'bg-red-50' : !readonly && 'hover:bg-gray-50'
             ]"
             @click="toggle(photo, $event)"
             @dblclick="!multiple && $emit('confirm')"
@@ -267,8 +269,10 @@ export default {
     photos: { type: Array, required: true },
     prefix: { type: String, default: '' },
     loading: { type: Boolean, default: false },
-    modelValue: { type: [String, Array], required: true },
+    modelValue: { type: [String, Array], default: '' },
     multiple: { type: Boolean, default: false },
+    /* Only browse, to see what is in a folder. */
+    readonly: { type: Boolean, default: false },
     labels: { type: Object, default: () => ({}) }
   },
   emits: ['update:modelValue', 'open', 'confirm'],
@@ -327,6 +331,7 @@ export default {
         : this.modelValue == photo.key
     },
     toggle(photo, event) {
+      if (this.readonly) return
       if (!this.multiple) return this.$emit('update:modelValue', photo.key)
 
       let keys = [photo.key]

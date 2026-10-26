@@ -767,6 +767,25 @@ app.get(
   })
 )
 
+/* When the given photos were taken, so a section can be sorted that holds photos of several folders. */
+app.post(
+  '/api/library/dates',
+  requireAdmin,
+  wrap(async (req, res) => {
+    const keys = Array.isArray(req.body.keys) ? req.body.keys : []
+    if (keys.length > 10000) throw new HttpError(400, 'too-many-keys')
+    const invalid = []
+    const clean = keys.map((key) => cleanKey(key, invalid))
+    if (invalid.length)
+      throw new HttpError(400, 'invalid-key', { keys: invalid })
+
+    const dates = await library.mapLimit(clean, 8, library.takenAtOf)
+    res.send({
+      dates: Object.fromEntries(clean.map((key, i) => [key, dates[i]]))
+    })
+  })
+)
+
 /* A small preview of an original, so the picker can show the photos before they are in an album. */
 app.get(
   '/api/library/preview',
